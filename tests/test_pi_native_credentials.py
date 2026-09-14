@@ -2244,6 +2244,106 @@ def test_dual_family_provider_matches_model_family(
     assert provider.base_url == expected_base_url
 
 
+def test_inline_family_lists_all_configured_models_from_both_families() -> None:
+    """The Pi picker lists every configured family model, not just the default.
+
+    A dual-family gateway (Claude tiers on anthropic, the rest on openai)
+    used to render only the anthropic default, so Omnigent's Pi dropdown
+    showed one id while ``~/.pi/agent/models.json`` listed the full catalog.
+    """
+    config = {
+        "providers": {
+            "cliproxy": {
+                "kind": "gateway",
+                "default": ["anthropic", "openai", "pi"],
+                "anthropic": {
+                    "base_url": "https://openai.example.com",
+                    "api_key": "sk-test",
+                    "models": {
+                        "default": "factory/claude-opus-5",
+                        "sonnet": "factory/claude-sonnet-5",
+                    },
+                },
+                "openai": {
+                    "base_url": "https://openai.example.com/v1",
+                    "api_key": "sk-test",
+                    "wire_api": "responses",
+                    "models": {
+                        "default": "factory/gpt-5.6-terra",
+                        "grok-4.6": "factory/grok-4.6",
+                    },
+                },
+            }
+        }
+    }
+    provider = creds.resolve_pi_native_provider(config_loader=lambda: config)
+    assert provider is not None
+    assert provider.model == "factory/claude-opus-5"
+    assert provider.api == "anthropic-messages"
+    cfg = provider.to_models_config()
+    listed = {
+        (provider_id, model["id"])
+        for provider_id, payload in cfg["providers"].items()
+        for model in payload["models"]
+    }
+    assert listed == {
+        ("omnigent", "factory/claude-opus-5"),
+        ("omnigent", "factory/claude-sonnet-5"),
+        ("omnigent-openai", "factory/gpt-5.6-terra"),
+        ("omnigent-openai", "factory/grok-4.6"),
+    }
+
+
+def test_inline_family_gpt_pick_keeps_stable_openai_provider_id(tmp_path: Path) -> None:
+    """A picker value ``omnigent-openai/<id>`` must still resolve after launch.
+
+    Selecting a GPT id makes the OpenAI family primary for wire routing, but
+    the rendered provider id stays ``omnigent-openai`` so the start-picker
+    selection still matches.
+    """
+    config = {
+        "providers": {
+            "cliproxy": {
+                "kind": "gateway",
+                "default": ["anthropic", "openai", "pi"],
+                "anthropic": {
+                    "base_url": "https://openai.example.com",
+                    "api_key": "sk-test",
+                    "models": {"default": "factory/claude-opus-5"},
+                },
+                "openai": {
+                    "base_url": "https://openai.example.com/v1",
+                    "api_key": "sk-test",
+                    "wire_api": "responses",
+                    "models": {"default": "factory/gpt-5.6-terra"},
+                },
+            }
+        }
+    }
+    selection = "omnigent-openai/factory/gpt-5.6-terra"
+    provider = creds.resolve_pi_native_provider(model=selection, config_loader=lambda: config)
+    assert provider is not None
+    assert provider.api == "openai-responses"
+    assert provider.model == "factory/gpt-5.6-terra"
+    cfg = provider.to_models_config()
+    assert any(
+        model["id"] == "factory/gpt-5.6-terra"
+        for model in cfg["providers"]["omnigent-openai"]["models"]
+    )
+    assert any(
+        model["id"] == "factory/claude-opus-5" for model in cfg["providers"]["omnigent"]["models"]
+    )
+    _, args, _ = creds.pi_native_provider_launch(
+        tmp_path / "pi-agent", provider, selection=selection
+    )
+    assert args[:4] == [
+        "--provider",
+        "omnigent-openai",
+        "--model",
+        "omnigent-openai/factory/gpt-5.6-terra",
+    ]
+
+
 @pytest.mark.parametrize(
     ("model", "anthropic", "openai", "expected_api"),
     [

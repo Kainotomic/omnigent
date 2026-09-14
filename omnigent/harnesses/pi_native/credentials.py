@@ -60,6 +60,7 @@ from omnigent.onboarding.provider_config import (
     KEY_KIND,
     LOCAL_KIND,
     PI_SURFACE,
+    FamilyConfig,
     ProviderEntry,
     default_provider_for_harness,
     load_config,
@@ -1275,10 +1276,85 @@ def _catalog_entry_for_model(model_id: str) -> model_catalog.ModelEntry | None:
     return None
 
 
+def _family_configured_model_ids(family: FamilyConfig) -> list[str]:
+    """Unique model ids from ``family.models``, default first."""
+    ids: list[str] = []
+    default = family.default_model
+    if isinstance(default, str) and default:
+        ids.append(default)
+    for mid in family.models.values():
+        if isinstance(mid, str) and mid and mid not in ids:
+            ids.append(mid)
+    return ids
+
+
+def _inline_family_wire(
+    family_name: str, family: FamilyConfig
+) -> tuple[str, str, bool] | None:
+    """Return ``(api, api_key, auth_header)`` when *family* can drive Pi."""
+    if not family.base_url:
+        return None
+    if family_name == "anthropic":
+        api = "anthropic-messages"
+    elif family.wire_api == CHAT_WIRE_API:
+        api = "openai-completions"
+    else:
+        api = "openai-responses"
+    if family.api_key:
+        return api, family.api_key, False
+    if family.auth_command:
+        return api, f"!{family.auth_command}", True
+    return None
+
+
+def _inline_family_model_entries(
+    family: FamilyConfig, leading_ids: list[str]
+) -> list[_PiModelEntry]:
+    """Pi model entries for *family*, *leading_ids* first, then configured ids.
+
+    Family-level ``context_window`` / ``max_output_tokens`` apply only to the
+    family's default — they describe that one model, not every role in the map.
+    """
+    ids: list[str] = []
+    for mid in (*leading_ids, *_family_configured_model_ids(family)):
+        if mid and mid not in ids:
+            ids.append(mid)
+    default = family.default_model
+    return [
+        _gateway_pi_model_entry(
+            mid,
+            configured_context_window=family.context_window if mid == default else None,
+            configured_max_output_tokens=family.max_output_tokens if mid == default else None,
+        )
+        for mid in ids
+    ]
+
+
+def _inline_pi_provider_payload(
+    family: FamilyConfig,
+    api: str,
+    api_key: str,
+    auth_header: bool,
+    models: list[_PiModelEntry],
+) -> _PiProviderPayload:
+    """One Pi ``models.json`` provider block for an inline family."""
+    payload: _PiProviderPayload = {
+        "baseUrl": family.base_url,
+        "api": api,
+        "apiKey": api_key,
+        "models": models,
+    }
+    if auth_header:
+        payload["authHeader"] = True
+    if api == "anthropic-messages":
+        payload["compat"] = {"forceAdaptiveThinking": True}
+    return payload
+
+
 def _inline_family_pi_provider(
     entry: ProviderEntry, *, model: str | None
 ) -> PiProviderConfig | None:
-    """Resolve a key/gateway/local provider into Pi config from its family.
+    """Resolve a key/gateway/local provider into Pi config from its families.
 
     Tries the family matching the selected model first, so a provider offering
     both surfaces serves a GPT id from its OpenAI family rather than whichever
@@ -1286,64 +1362,107 @@ def _inline_family_pi_provider(
     keeps protocol-translating proxies working: a LiteLLM ``/anthropic``
     passthrough is the only configured family and still serves any model.
 
+    Every id in each usable family's ``models`` map is registered (Anthropic
+    on ``omnigent``, OpenAI on ``omnigent-openai`` when both exist) so the
+    pre-launch picker lists the full configured catalog, not just the default.
+
     :param entry: The resolved default provider entry.
     :param model: Session model override, or ``None`` to use the family default.
     :returns: The Pi provider config, or ``None`` when no usable family with a
         base URL and credential is configured.
     """
-    for family_name in _inline_family_order(model):
+    usable: dict[str, tuple[FamilyConfig, str, str, bool]] = {}
+    for family_name in ("anthropic", "openai"):
         family = entry.family(family_name)
-        if family is None or not family.base_url:
+        if family is None:
             continue
-        # Determine the API type based on family and wire_api setting.
-        if family_name == "anthropic":
-            api = "anthropic-messages"
-        elif family.wire_api == CHAT_WIRE_API:
-            api = "openai-completions"
-        else:
-            api = "openai-responses"
-        # A static key (or $VAR) — Pi reads a literal/env apiKey directly; an
-        # auth_command becomes a "!command" Pi resolves at request time.
-        if family.api_key:
-            api_key = family.api_key
-            auth_header = False
-        elif family.auth_command:
-            api_key = f"!{family.auth_command}"
-            auth_header = True
-        else:
+        wire = _inline_family_wire(family_name, family)
+        if wire is None:
             continue
-        resolved_model = model or entry.family_default_model(family_name)
-        if not resolved_model:
-            continue
+        usable[family_name] = (family, *wire)
+    if not usable:
+        return None
+
+    override = model
+    if override is not None:
         # A session override can arrive as a Databricks-gateway id, which only
         # the gateway routes; strip the mechanical prefix for a vendor-direct
         # (key-kind) endpoint. Gateway/local kinds pass through verbatim — they
         # front arbitrary inventories (a proxy fronting the Databricks AI
         # Gateway is addressed by the prefixed endpoint name). A configured
         # family default is exempt — it names an id its own endpoint serves.
-        if model is not None:
-            resolved_model = normalize_model_for_provider(resolved_model, entry.kind)
+        override = normalize_model_for_provider(override, entry.kind)
         # Strip bracket suffixes (e.g. "[1m]") — accepted by the direct
         # Anthropic API but rejected by the Databricks AI Gateway.
-        resolved_model = re.sub(r"\[.*?\]$", "", resolved_model)
-        model_entry = _gateway_pi_model_entry(
-            resolved_model,
-            configured_context_window=family.context_window,
-            configured_max_output_tokens=family.max_output_tokens,
-        )
-        return PiProviderConfig(
-            provider_id=_PI_PROVIDER_ID,
-            base_url=family.base_url,
-            api=api,
-            model=resolved_model,
-            api_key=api_key,
-            auth_header=auth_header,
-            # Advisory when the model landed on the other family's wire; a raw
-            # passthrough endpoint rejects it, and silence reads as a hang.
-            credential_warning=_cross_family_routing_warning(entry, family_name, resolved_model),
-            extra_models=[model_entry],
-        )
-    return None
+        override = re.sub(r"\[.*?\]$", "", override)
+
+    primary_name: str | None = None
+    resolved_model: str | None = None
+    for family_name in _inline_family_order(override):
+        if family_name not in usable:
+            continue
+        candidate = override or entry.family_default_model(family_name)
+        if not candidate:
+            continue
+        primary_name = family_name
+        resolved_model = candidate
+        break
+    if primary_name is None or resolved_model is None:
+        return None
+
+    both_families = "anthropic" in usable and "openai" in usable
+    # Keep picker ids stable: Claude stays on ``omnigent``, GPT on
+    # ``omnigent-openai`` whenever both families exist. A lone OpenAI family
+    # still uses ``omnigent`` so existing single-family configs stay put.
+    primary_provider_id = (
+        _PI_OPENAI_PROVIDER_ID if both_families and primary_name == "openai" else _PI_PROVIDER_ID
+    )
+    primary_family, api, api_key, auth_header = usable[primary_name]
+    configured_on_primary = set(_family_configured_model_ids(primary_family))
+    configured_elsewhere = {
+        mid
+        for name, (family, *_rest) in usable.items()
+        if name != primary_name
+        for mid in _family_configured_model_ids(family)
+    }
+    leading = (
+        [resolved_model]
+        if resolved_model not in configured_elsewhere
+        or resolved_model in configured_on_primary
+        else []
+    )
+    extra_models = _inline_family_model_entries(primary_family, leading)
+    additional: dict[str, _PiProviderPayload] = {}
+    for name, (family, fam_api, fam_key, fam_auth) in usable.items():
+        if name == primary_name:
+            continue
+        models = _inline_family_model_entries(family, [])
+        if not models:
+            continue
+        additional[
+            _PI_OPENAI_PROVIDER_ID if name == "openai" else _PI_PROVIDER_ID
+        ] = _inline_pi_provider_payload(family, fam_api, fam_key, fam_auth, models)
+    serving = next(
+        (
+            name
+            for name, (family, *_rest) in usable.items()
+            if resolved_model in _family_configured_model_ids(family)
+        ),
+        primary_name,
+    )
+    return PiProviderConfig(
+        provider_id=primary_provider_id,
+        base_url=primary_family.base_url,
+        api=api,
+        model=resolved_model,
+        api_key=api_key,
+        auth_header=auth_header,
+        # Advisory when the model landed on the other family's wire; a raw
+        # passthrough endpoint rejects it, and silence reads as a hang.
+        credential_warning=_cross_family_routing_warning(entry, serving, resolved_model),
+        extra_models=extra_models,
+        additional_providers=additional,
+    )
 
 
 def resolve_pi_native_provider(
