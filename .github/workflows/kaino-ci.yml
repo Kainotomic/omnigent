@@ -1,0 +1,88 @@
+name: Kaino CI
+
+# The fork's own CI. Upstream's ~100 workflows are deleted on every upstream
+# merge by scripts/sync-upstream.sh; the `guard` job below fails the build if
+# any of them come back, so a plain `git merge upstream/main` cannot silently
+# restore them.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kaino-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: No upstream workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Reject reintroduced upstream workflows
+        run: |
+          set -euo pipefail
+          strays=$(ls .github/workflows | grep -v '^kaino-' || true)
+          if [ -n "$strays" ]; then
+            echo "Upstream workflows are back in .github/workflows:"
+            echo "$strays"
+            echo
+            echo "Re-run scripts/sync-upstream.sh, or delete them, and push again."
+            exit 1
+          fi
+          echo "Only kaino-* workflows present."
+
+  scripts:
+    name: Automation self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      # Offline, no network, no secrets: mocked GitHub client against the frozen
+      # fixture, plus the real areas.json / MAINTAINER integrity checks.
+      - run: node .github/kaino/areas.test.js
+      - run: node .github/kaino/auto-assign-reviewer.test.js
+      - run: node .github/kaino/pr-issue-link.test.js
+      - run: node .github/kaino/duplicate-prs.test.js
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras --dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -C web lint
+      - run: pnpm -C web type-check
+      - run: pnpm -C web test

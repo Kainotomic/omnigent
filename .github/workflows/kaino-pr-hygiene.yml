@@ -1,0 +1,90 @@
+name: Kaino PR Hygiene
+
+# Per-PR automation: assign a reviewer, size-label, and flag PRs that link no
+# issue. Adapted from upstream's auto-assign-reviewer.yml / pr-hygiene-live.yml /
+# pr-size.yml, minus the LLM reviewer-ranking step (it cost gateway spend only to
+# reorder an allowlist the load-balancer already handles).
+#
+# pull_request_target so the token can write on fork PRs. Safe: it checks out
+# only the default branch and runs no PR-authored code.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, edited, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize per PR: a run must not be cancelled between commenting and labeling.
+  group: kaino-pr-hygiene-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write         # labels and the nudge comment
+      pull-requests: write  # reviewers, assignees, PR comments
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github
+
+      - name: Assign reviewer
+        if: github.event.action != 'synchronize'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          retries: 3
+          script: |
+            const script = require('./.github/kaino/auto-assign-reviewer.js');
+            await script({ github, context, core });
+
+      - name: Issue-link check
+        if: always() && !github.event.pull_request.draft
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        env:
+          # Dry run until you have watched a few PRs go through: flip to "true"
+          # to actually comment and label. CLOSE_ENFORCE additionally lets it
+          # close PRs left unlinked past the deadline.
+          ENFORCE: "false"
+          CLOSE_ENFORCE: "false"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          retries: 3
+          script: |
+            const script = require('./.github/kaino/pr-issue-link.js');
+            await script({ context, github, core });
+
+      - name: Set up Python
+        if: always()
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.11"
+
+      - name: Size label
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          size_label=$(
+            gh api --paginate "/repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
+              | .github/scripts/pr-size/compute_label.py
+          )
+          echo "Computed: ${size_label}"
+          gh label create "${size_label}" --repo "${REPO}" --color ededed \
+            --description "Pull request size: ${size_label#size/}" --force >/dev/null
+          gh pr edit "${PR_NUMBER}" --repo "${REPO}" --add-label "${size_label}"
+          gh api --paginate "/repos/${REPO}/issues/${PR_NUMBER}/labels" --jq '.[].name' \
+            | while read -r label; do
+                if [[ "${label}" == size/* && "${label}" != "${size_label}" ]]; then
+                  gh pr edit "${PR_NUMBER}" --repo "${REPO}" --remove-label "${label}"
+                fi
+              done

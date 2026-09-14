@@ -1,0 +1,40 @@
+name: Kaino Duplicate PRs
+
+# Four-hourly sweep: groups open PRs that appear to solve the same issue, keeps
+# one, and flags the rest with the `duplicate` label. Unchanged from upstream's
+# duplicate-prs.yml apart from the script path and the repo guard.
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kaino-duplicate-prs
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+          sparse-checkout: .github
+      # No dry-run switch: this script always acts. It is safe to leave on
+      # because canClosePR() refuses to close MEMBER/OWNER/COLLABORATOR PRs, so
+      # an org member's duplicate is commented on and labeled, never closed.
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          retries: 3
+          script: |
+            const script = require('./.github/kaino/duplicate-prs.js');
+            await script({ context, github, core });
