@@ -1,0 +1,99 @@
+# One-user Omnigent workspace for Dokploy (raw Compose, project Kainogent
+# Workspaces, Contabo). Same host+egress shape as the legacy Kainogent
+# workspaces: `egress` owns the network namespace and installs an nftables
+# rule that rejects traffic to the Dokploy control plane; `host` joins that
+# namespace and runs `omnigent host`.
+#
+# Security posture vs. legacy: cap_drop/cap_add/read_only/limits carried over;
+# CAP_SYS_ADMIN, apparmor=unconfined and seccomp=unconfined are deliberately
+# NOT copied. Task 3 must add back only what the runner / bubblewrap sandbox
+# proves it needs (record each addition in the plan).
+#
+# Per-user env (Dokploy compose Environment tab): OMNIGENT_SERVER_URL,
+# OMNIGENT_GATEWAY_API_KEY, optional OMNIGENT_GATEWAY_* overrides.
+# Enrollment after first start: `docker compose exec host omnigent login
+# "$OMNIGENT_SERVER_URL"` (browser ticket), then restart the host service.
+
+services:
+  egress:
+    image: ghcr.io/kainotomic/omnigent-host@sha256:PLACEHOLDER
+    platform: linux/amd64
+    restart: unless-stopped
+    # Legacy ran `nft ... && exec sleep infinity` with the kainogent-host image;
+    # the upstream host image ships nftables too, so the same script runs here.
+    # tini forwards SIGTERM to sleep so `docker stop` exits 0, not 137.
+    entrypoint:
+      - /usr/bin/tini
+      - --
+      - sh
+      - -c
+      - >-
+        nft add table inet omnigent &&
+        nft 'add chain inet omnigent output { type filter hook output priority 0; policy accept; }' &&
+        nft add rule inet omnigent output ip daddr ${OMNIGENT_EGRESS_DENY_IP:-146.190.116.149} reject &&
+        exec sleep infinity
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    read_only: true
+    pids_limit: 32
+    mem_limit: 64M
+    networks:
+      - workspace-egress
+    healthcheck:
+      test: ["CMD-SHELL", "nft list chain inet omnigent output | grep -F '${OMNIGENT_EGRESS_DENY_IP:-146.190.116.149}'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  host:
+    image: ghcr.io/kainotomic/omnigent-host@sha256:PLACEHOLDER
+    platform: linux/amd64
+    restart: unless-stopped
+    network_mode: service:egress
+    depends_on:
+      egress:
+        condition: service_healthy
+        # restart: true (compose >= 2.17) restarts host when a Compose command
+        # restarts/recreates egress. A Docker-runtime restart of egress (crash)
+        # is NOT covered: host keeps the dead netns and its healthcheck goes
+        # unhealthy. A plain `up -d` is a no-op then (same egress container
+        # id); fix with `docker compose restart host` (or Dokploy Redeploy).
+        restart: true
+    environment:
+      OMNIGENT_SERVER_URL: ${OMNIGENT_SERVER_URL:?set OMNIGENT_SERVER_URL}
+      OMNIGENT_GATEWAY_API_KEY: ${OMNIGENT_GATEWAY_API_KEY:?set OMNIGENT_GATEWAY_API_KEY}
+      OMNIGENT_GATEWAY_BASE_URL: ${OMNIGENT_GATEWAY_BASE_URL:-https://openai.kainotomic.com}
+      OMNIGENT_GATEWAY_ANTHROPIC_MODEL: ${OMNIGENT_GATEWAY_ANTHROPIC_MODEL:-}
+      OMNIGENT_GATEWAY_OPENAI_MODEL: ${OMNIGENT_GATEWAY_OPENAI_MODEL:-}
+      OMNIGENT_GATEWAY_FORCE: ${OMNIGENT_GATEWAY_FORCE:-0}
+    volumes:
+      - workspace:/workspace
+      # Persistent home: ~/.omnigent (host identity + tokens), ~/.gemini (agy
+      # OAuth), and the rendered harness configs (user edits win on restart).
+      - home:/root
+    working_dir: /workspace
+    cpus: "2.0"
+    mem_limit: 4G
+    pids_limit: 512
+    stop_grace_period: 60s
+    healthcheck:
+      # Daemon alive AND the server reachable through the egress namespace.
+      # [o] keeps pgrep from matching the healthcheck's own sh -c wrapper; the
+      # curl catches a dead netns after a runtime restart of egress (Docker
+      # does not restart on unhealthy: run `docker compose restart host`).
+      test:
+        - CMD-SHELL
+        - pgrep -f '[o]mnigent host' >/dev/null && curl -fsS --max-time 5 "$$OMNIGENT_SERVER_URL/health" >/dev/null
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  workspace:
+  home:
+
+networks:
+  workspace-egress:

@@ -1,0 +1,22 @@
+# Rendered to ~/.omnigent/config.yaml (skipped if the file exists; with
+# OMNIGENT_GATEWAY_FORCE=1 only providers.cliproxy is replaced so the host
+# identity `omnigent host` stores in this file survives).
+# Schema: omnigent/onboarding/provider_config.py (kind gateway, families
+# anthropic/openai, api_key_ref env:<VAR>, wire_api responses, models
+# role -> id with `default`, context_window / max_output_tokens for the
+# default model, default list may name the pi scope) — the shape Kainogent's
+# CI wrote via .github/scripts/ci/write-cliproxy-provider.py. Claude appends
+# /v1/messages to its base URL, so the anthropic family is the gateway origin;
+# the openai family (Responses API) uses the /v1 root. The entrypoint fills
+# each family's models/limits from gateway-models.jsonl.
+providers:
+  cliproxy:
+    kind: gateway
+    anthropic:
+      base_url: "$GATEWAY_BASE_URL"
+      api_key_ref: env:OMNIGENT_GATEWAY_API_KEY
+    openai:
+      base_url: "$GATEWAY_OPENAI_BASE_URL"
+      api_key_ref: env:OMNIGENT_GATEWAY_API_KEY
+      wire_api: responses
+    default: [anthropic, openai, pi]

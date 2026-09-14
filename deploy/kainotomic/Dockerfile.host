@@ -1,0 +1,83 @@
+# Kainotomic workspace image: upstream `--target host` plus pinned harness
+# CLIs, tini, ripgrep, and the gateway-config entrypoint.
+#
+# Two-step build (nothing is published to ghcr.io/kainotomic yet), from the
+# repo root:
+#
+#   docker build -f deploy/docker/Dockerfile --target host \
+#       --build-arg EXTRA_HARNESS_CLIS=opencode@1.18.30 \
+#       -t omnigent-host-base:b203ba4c .
+#   docker build -f deploy/kainotomic/Dockerfile.host \
+#       -t omnigent-host:b203ba4c-kt4 .
+#
+# Once the base is published, point BASE_IMAGE at the immutable digest instead:
+#   --build-arg BASE_IMAGE=ghcr.io/kainotomic/omnigent-host@sha256:<digest>
+ARG BASE_IMAGE=omnigent-host-base:b203ba4c
+FROM ${BASE_IMAGE}
+
+# Exact CLI pins. Upstream installs claude/codex/pi unpinned (latest at build
+# time); reinstalling by exact version makes the image reproducible. Bump here
+# only after re-qualifying the native adapters (floors: claude >=2.1.161,
+# codex >=0.137.0, pi >=0.84.2, opencode >=1.17.7,<1.19.0). agy stays on the
+# upstream 1.1.16 sha256 pin from the base image.
+ARG CLAUDE_CODE_VERSION=2.1.270
+ARG CODEX_VERSION=0.154.0
+ARG PI_VERSION=0.85.1
+ARG OPENCODE_VERSION=1.18.30
+
+# tini: PID 1 that forwards SIGTERM to `omnigent host` and reaps zombies, so a
+# `docker stop` ends cleanly instead of timing out into SIGKILL (137).
+# ripgrep: expected by the coding harnesses for fast search.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini ripgrep \
+ && rm -rf /var/lib/apt/lists/*
+
+# set -eu first so a failed npm install fails the layer instead of letting the
+# version check pass on the base image's pre-installed CLIs.
+RUN set -eu; \
+    npm install -g --no-audit --no-fund \
+      "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+      "@openai/codex@${CODEX_VERSION}" \
+      "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+      "opencode-ai@${OPENCODE_VERSION}"; \
+    npm cache clean --force; \
+    check() { \
+      got="$($1 --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"; \
+      [ "$got" = "$2" ] || { echo "ERROR: $1 reports '${got:-<none>}', expected '$2'" >&2; exit 1; }; \
+      echo "$1 $got pinned"; \
+    }; \
+    check claude "${CLAUDE_CODE_VERSION}"; \
+    check codex "${CODEX_VERSION}"; \
+    check pi "${PI_VERSION}"; \
+    check opencode "${OPENCODE_VERSION}"; \
+    check agy "${AGY_VERSION}"; \
+    command -v rg >/dev/null; \
+    test -x /usr/bin/tini
+
+# Secret-free harness config templates + model catalog (gateway-models.jsonl)
+# + the entrypoint that renders them from OMNIGENT_GATEWAY_* env at container
+# start (see README.md in this directory).
+COPY deploy/kainotomic/harness-templates/ /opt/omnigent-kainotomic/harness-templates/
+COPY deploy/kainotomic/workspace-entrypoint.py /usr/local/bin/omnigent-workspace-entrypoint
+COPY deploy/kainotomic/gateway-key-helper.sh /usr/local/bin/omnigent-gateway-key
+RUN chmod 0755 /usr/local/bin/omnigent-workspace-entrypoint /usr/local/bin/omnigent-gateway-key \
+ && mkdir -p /etc/claude-code /workspace
+
+ARG OMNIGENT_SOURCE_REVISION=b203ba4cf4b00c48ddbe373713ac0e74b517cca0
+LABEL org.opencontainers.image.source="https://github.com/Kainotomic/omnigent" \
+      org.opencontainers.image.revision="${OMNIGENT_SOURCE_REVISION}" \
+      org.opencontainers.image.title="omnigent-host (Kainotomic workspace)" \
+      com.kainotomic.harness.claude-code="${CLAUDE_CODE_VERSION}" \
+      com.kainotomic.harness.codex="${CODEX_VERSION}" \
+      com.kainotomic.harness.pi="${PI_VERSION}" \
+      com.kainotomic.harness.opencode="${OPENCODE_VERSION}" \
+      com.kainotomic.harness.agy="${AGY_VERSION}"
+
+WORKDIR /workspace
+
+# With no args the entrypoint renders the harness configs and execs
+# `omnigent host --server "$OMNIGENT_SERVER_URL" --non-interactive`; any args
+# are exec'd instead (still after rendering). The egress sidecar overrides
+# `entrypoint:` entirely, so it never renders into its read-only root.
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/omnigent-workspace-entrypoint"]
+CMD []

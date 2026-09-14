@@ -1,0 +1,20 @@
+# Rendered to ~/.codex/config.toml (skipped if the file already exists).
+# Schema: developers.openai.com/codex/config-reference (model, model_provider,
+# model_context_window, model_providers.<id>.{name,base_url,env_key,wire_api})
+# and codex-rs/config/src/config_toml.rs at rust-v0.154.0. wire_api =
+# "responses" is the only accepted value. Omnigent readiness
+# (omnigent/onboarding/codex_auth_readiness.py) reports "provider-ready" when
+# the env_key variable is non-empty in the runner env. The model and limits
+# come from gateway-models.jsonl (openai default). Alternate models are
+# profile files next to this one — ~/.codex/<codexProfile>.config.toml,
+# selected with `codex --profile <name>` (the legacy [profiles.*] tables are
+# parsed but no longer applied by codex 0.154.0; see the codex-rs loader).
+model = "${OPENAI_MODEL}"
+model_provider = "cliproxy"
+${CODEX_MODEL_LIMITS}
+
+[model_providers.cliproxy]
+name = "Kainotomic CLIProxy"
+base_url = "${GATEWAY_OPENAI_BASE_URL}"
+env_key = "OMNIGENT_GATEWAY_API_KEY"
+wire_api = "responses"

@@ -1,0 +1,6 @@
+# Dockerfile.host only COPYs deploy/kainotomic/; keep the build context tiny.
+*
+!deploy/kainotomic/
+deploy/kainotomic/*.yaml
+deploy/kainotomic/*.md
+deploy/kainotomic/.env.example

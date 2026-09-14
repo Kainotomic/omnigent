@@ -1,0 +1,12 @@
+{
+  "_comment": "Rendered to ~/.pi/agent/models.json (skipped if present). Schema: packages/coding-agent/docs/models.md at github.com/earendil-works/pi-mono — providers.<id>.{baseUrl,api,apiKey,authHeader,models[]}, model fields id/reasoning/thinkingLevelMap/input/contextWindow/maxTokens; apiKey '$$VAR' is resolved from the environment at request time. One provider, api openai-responses (/v1/responses) for every model, as in the operator's working config; the entrypoint fills `models` from gateway-models.jsonl.",
+  "providers": {
+    "cliproxy": {
+      "baseUrl": "${GATEWAY_OPENAI_BASE_URL}",
+      "api": "openai-responses",
+      "apiKey": "$$OMNIGENT_GATEWAY_API_KEY",
+      "authHeader": true,
+      "models": []
+    }
+  }
+}

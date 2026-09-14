@@ -1,0 +1,7 @@
+{
+  "_comment": "Rendered to ~/.local/share/opencode/auth.json (only if absent). Registers the cliproxy provider in OpenCode's own credential store so Omnigent readiness (omnigent/onboarding/opencode_auth.py, which credits auth.json entries or a curated env list, never a custom opencode.json provider) reports opencode-native ready. The key value here is a non-secret placeholder: OpenCode merges opencode.json provider options over auth.json, so the real key still comes from options.apiKey {env:OMNIGENT_GATEWAY_API_KEY} (verified in-image against a capturing gateway). Schema: packages/opencode/src/auth/index.ts ({<providerID>: {type: 'api', key}}).",
+  "cliproxy": {
+    "type": "api",
+    "key": "managed-by-opencode-json-env-OMNIGENT_GATEWAY_API_KEY"
+  }
+}

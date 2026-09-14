@@ -1,0 +1,5 @@
+{
+  "_comment": "Rendered to ~/.pi/agent/settings.json (skipped if present). defaultProvider/defaultModel select the models.json entry Pi starts with (the catalog's anthropic default); see packages/coding-agent/docs/settings.md at github.com/earendil-works/pi-mono.",
+  "defaultProvider": "cliproxy",
+  "defaultModel": "${ANTHROPIC_MODEL}"
+}

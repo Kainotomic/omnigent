@@ -1,0 +1,105 @@
+# Kainotomic Omnigent server stack for Dokploy (raw Compose, project Kainogent).
+# Modeled on deploy/docker/docker-compose.yaml; differs only in: pinned
+# ghcr.io/kainotomic image digest, explicitly named volumes, Traefik labels for
+# the production route, resource limits, and the OIDC-only auth env. The
+# volumes carry fixed `name:`s (`omnigent-kt-postgres-data`, `omnigent-kt-data`)
+# so no appName or key coincidence can ever mount the legacy
+# `omnigent-server-do_*` data. Never mark them external.
+#
+# Routing is label-only: do NOT attach a Dokploy domain row to this compose
+# (it would add a second router without the middlewares below).
+#
+# Fill before deploying: the image digest and every ${VAR} in .env.example
+# (Dokploy compose "Environment" tab). Replace `omnigent-kt` in the Traefik
+# router/service names with the Dokploy appName if you want them to match.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # Starting point for dokploy-root (16 GB, has swap-thrashed); tune after
+    # observing real usage.
+    mem_limit: 1536m
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-omnigent}
+      POSTGRES_USER: ${POSTGRES_USER:-omnigent}
+      # Interpolated raw into DATABASE_URL below: generate a URL-safe value
+      # (`openssl rand -hex 32`), no `@ : / ? #` characters.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - omnigent-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-omnigent} -d $${POSTGRES_DB:-omnigent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  omnigent:
+    # Immutable digest of the `runtime` target built from b203ba4c. Replace
+    # PLACEHOLDER with the digest printed by the publish workflow / `docker push`.
+    image: ghcr.io/kainotomic/omnigent-server@sha256:PLACEHOLDER
+    restart: unless-stopped
+    # Starting point; tune after observing real usage.
+    mem_limit: 4g
+    pids_limit: 2048
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-omnigent}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-omnigent}
+      ARTIFACT_DIR: /data/artifacts
+      HOST: 0.0.0.0
+      PORT: "8000"
+      OMNIGENT_FEATURES: "${OMNIGENT_FEATURES:-}"
+      # Anchors the server data dir on the /data volume (admins file at
+      # /data/admins, allowed_domains at /data/allowed_domains, config.yaml).
+      OMNIGENT_ADMIN_CREDENTIALS_PATH: /data/admin-credentials
+      OMNIGENT_AUTH_ENABLED: "1"
+      OMNIGENT_AUTH_PROVIDER: oidc
+      OMNIGENT_OIDC_ISSUER: ${OMNIGENT_OIDC_ISSUER:?set OMNIGENT_OIDC_ISSUER}
+      OMNIGENT_OIDC_CLIENT_ID: ${OMNIGENT_OIDC_CLIENT_ID:?set OMNIGENT_OIDC_CLIENT_ID}
+      OMNIGENT_OIDC_CLIENT_SECRET: ${OMNIGENT_OIDC_CLIENT_SECRET:?set OMNIGENT_OIDC_CLIENT_SECRET}
+      OMNIGENT_OIDC_COOKIE_SECRET: ${OMNIGENT_OIDC_COOKIE_SECRET:?set OMNIGENT_OIDC_COOKIE_SECRET}
+      OMNIGENT_OIDC_REDIRECT_URI: ${OMNIGENT_OIDC_REDIRECT_URI:-https://kainogent.kainotomic.com/auth/callback}
+      OMNIGENT_OIDC_ALLOWED_DOMAINS: ${OMNIGENT_OIDC_ALLOWED_DOMAINS:?set OMNIGENT_OIDC_ALLOWED_DOMAINS}
+      OMNIGENT_OIDC_SESSION_TTL_HOURS: "${OMNIGENT_OIDC_SESSION_TTL_HOURS:-720}"
+      OMNIGENT_OIDC_ALLOW_INVITES: "${OMNIGENT_OIDC_ALLOW_INVITES:-}"
+      OMNIGENT_WS_ALLOWED_ORIGINS: ${OMNIGENT_WS_ALLOWED_ORIGINS:-https://kainogent.kainotomic.com}
+      OMNIGENT_GRANT_MAX_LIFETIME_DAYS: "${OMNIGENT_GRANT_MAX_LIFETIME_DAYS:-30}"
+    volumes:
+      - omnigent-data:/data
+    networks:
+      - default
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.omnigent-kt-web.rule=Host(`kainogent.kainotomic.com`)
+      - traefik.http.routers.omnigent-kt-web.entrypoints=web
+      - traefik.http.routers.omnigent-kt-web.service=omnigent-kt-web
+      - traefik.http.routers.omnigent-kt-web.middlewares=redirect-to-https@file
+      - traefik.http.services.omnigent-kt-web.loadbalancer.server.port=8000
+      - traefik.http.routers.omnigent-kt-websecure.rule=Host(`kainogent.kainotomic.com`)
+      - traefik.http.routers.omnigent-kt-websecure.entrypoints=websecure
+      - traefik.http.routers.omnigent-kt-websecure.service=omnigent-kt-websecure
+      # Both middlewares exist on dokploy-root's Traefik file provider
+      # (/etc/dokploy/traefik/dynamic/kainogent-cloudflare-only.yml).
+      - traefik.http.routers.omnigent-kt-websecure.middlewares=kainogent-cloudflare-only@file,kainogent-no-store@file
+      - traefik.http.routers.omnigent-kt-websecure.tls.certresolver=letsencrypt
+      - traefik.http.services.omnigent-kt-websecure.loadbalancer.server.port=8000
+
+volumes:
+  omnigent-postgres-data:
+    name: omnigent-kt-postgres-data
+  omnigent-data:
+    name: omnigent-kt-data
+
+networks:
+  dokploy-network:
+    external: true
