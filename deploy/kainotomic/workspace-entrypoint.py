@@ -12,7 +12,7 @@ only these variables
   OMNIGENT_GATEWAY_BASE_URL        CLIProxy root, default https://openai.kainotomic.com
   OMNIGENT_GATEWAY_API_KEY         per-workspace CLIProxy key (env only)
   OMNIGENT_GATEWAY_ANTHROPIC_MODEL overrides the catalog's anthropic default
-                                   (Claude Code, Pi, OpenCode, Omnigent anthropic)
+                                   (Claude Code, Pi, Omnigent anthropic)
   OMNIGENT_GATEWAY_OPENAI_MODEL    overrides the catalog's openai default
                                    (Codex, Omnigent openai)
   OMNIGENT_GATEWAY_FORCE=1         overwrite files in the persistent home
@@ -20,20 +20,32 @@ only these variables
 
 Model catalog: /opt/omnigent-kainotomic/harness-templates/gateway-models.jsonl,
 one model per line with the ids CLIProxy serves, their limits and the
-per-harness allocation (family, default, claudeCode tiers, codexProfile). Every
-per-harness model block below is generated from it, so a model is added or
-re-tiered in exactly one place.
+per-harness allocation (family, default, opencodeDefault, claudeCode tiers,
+codexProfile). Every per-harness model block below is generated from it, so a
+model is added or re-tiered in exactly one place.
 
 Rendered from /opt/omnigent-kainotomic/harness-templates (string.Template for
 the gateway scalars, then the model blocks are injected structurally):
   /etc/claude-code/managed-settings.json   always (image-owned, not in the home)
-  ~/.omnigent/config.yaml                  only if absent; FORCE replaces just providers.cliproxy
-  ~/.codex/config.toml                     only if absent (or FORCE)
-  ~/.codex/<codexProfile>.config.toml      only if absent (or FORCE); `codex --profile <name>`
-  ~/.config/opencode/opencode.json         only if absent (or FORCE)
-  ~/.pi/agent/models.json                  only if absent (or FORCE)
-  ~/.pi/agent/settings.json                only if absent (or FORCE)
+  ~/.omnigent/config.yaml                  create if absent; catalog-hash or FORCE
+                                           updates providers.cliproxy catalog fields
+  ~/.codex/config.toml                     create if absent; catalog-hash updates
+                                           model + model_context_window
+  ~/.codex/<codexProfile>.config.toml      create/update on catalog-hash; `codex --profile <name>`
+  ~/.config/opencode/opencode.json         create if absent; catalog-hash updates
+                                           model + provider.cliproxy.models
+  ~/.pi/agent/models.json                  create if absent; catalog-hash updates
+                                           providers.cliproxy.models
+  ~/.pi/agent/settings.json                create if absent; catalog-hash updates
+                                           defaultProvider + defaultModel
   ~/.local/share/opencode/auth.json        only if absent (or FORCE); placeholder key
+
+The SHA-256 of gateway-models.jsonl is stored at
+~/.omnigent/.kainotomic-catalog-hash. A missing or different hash re-renders
+the catalog-driven fields above and leaves user-added keys, extra providers,
+plugins, Codex session history, agy oauth, and auth_tokens.json alone.
+A matching hash skips those files. FORCE still replaces the whole file
+(except omnigent config.yaml, which still merges only providers.cliproxy).
 
 ~/.omnigent/config.yaml carries the Omnigent-side `providers:` gateway entry
 (api_key_ref env:OMNIGENT_GATEWAY_API_KEY). It is what Omnigent's readiness
@@ -50,6 +62,7 @@ ANTHROPIC_BASE_URL are exported; OPENAI_API_KEY is never set.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -65,6 +78,8 @@ import yaml
 
 TEMPLATE_DIR = Path("/opt/omnigent-kainotomic/harness-templates")
 CATALOG_PATH = TEMPLATE_DIR / "gateway-models.jsonl"
+MANAGED_SETTINGS_PATH = Path("/etc/claude-code/managed-settings.json")
+CATALOG_HASH_NAME = ".kainotomic-catalog-hash"
 KEY_HELPER = "/usr/local/bin/omnigent-gateway-key"
 DEFAULT_BASE_URL = "https://openai.kainotomic.com"
 KEY_VAR = "OMNIGENT_GATEWAY_API_KEY"
@@ -94,6 +109,7 @@ class GatewayModel:
     id: str
     family: str
     default: bool = False
+    opencode_default: bool = False
     claude_tiers: tuple[str, ...] = ()
     codex_profile: str | None = None
     reasoning: bool = True
@@ -149,6 +165,7 @@ def _parse_model(raw: dict[str, object], line_no: int) -> GatewayModel:
         id=model_id,
         family=str(family),
         default=bool(raw.get("default", False)),
+        opencode_default=bool(raw.get("opencodeDefault", False)),
         claude_tiers=tuple(str(t) for t in tiers_raw),
         codex_profile=profile,
         reasoning=bool(raw.get("reasoning", True)),
@@ -159,7 +176,8 @@ def _parse_model(raw: dict[str, object], line_no: int) -> GatewayModel:
     )
 
 
-def load_catalog(path: Path = CATALOG_PATH) -> list[GatewayModel]:
+def load_catalog(path: Path | None = None) -> list[GatewayModel]:
+    path = path or CATALOG_PATH
     models: list[GatewayModel] = []
     for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
@@ -186,6 +204,9 @@ def load_catalog(path: Path = CATALOG_PATH) -> list[GatewayModel]:
             raise SystemExit(
                 f"catalog: family {family} needs exactly one default, got {len(defaults)}"
             )
+    oc_defaults = [m for m in models if m.opencode_default]
+    if len(oc_defaults) != 1:
+        raise SystemExit(f"catalog: needs exactly one opencodeDefault, got {len(oc_defaults)}")
     return models
 
 
@@ -200,6 +221,9 @@ class Allocation:
 
     def default(self, family: str) -> GatewayModel:
         return next(m for m in self.models if m.family == family and m.default)
+
+    def opencode_default(self) -> GatewayModel:
+        return next(m for m in self.models if m.opencode_default)
 
     def by_id(self, model_id: str) -> GatewayModel | None:
         return next((m for m in self.models if m.id == model_id), None)
@@ -360,42 +384,219 @@ def write_atomic(target: Path, content: str, mode: int = 0o644) -> None:
     os.replace(tmp, target)
 
 
+def catalog_digest(path: Path | None = None) -> str:
+    """SHA-256 of the catalog file bytes (stable across processes)."""
+    return hashlib.sha256((path or CATALOG_PATH).read_bytes()).hexdigest()
+
+
+def catalog_hash_path(config_home: Path) -> Path:
+    return config_home / CATALOG_HASH_NAME
+
+
+def read_catalog_hash(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text or None
+
+
+def write_catalog_hash(path: Path, digest: str) -> None:
+    write_atomic(path, digest + "\n", 0o644)
+    log(f"catalog hash {digest[:12]} stored at {path}")
+
+
+def _load_json_object(path: Path) -> dict | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def write_if_allowed(
-    target: Path, content: str, *, force: bool, always: bool, mode: int = 0o644
+    target: Path,
+    content: str,
+    *,
+    force: bool,
+    always: bool,
+    catalog_stale: bool = False,
+    merge: object | None = None,
+    mode: int = 0o644,
 ) -> None:
-    if target.exists() and not (force or always):
-        log(f"keep    {target} (exists; set OMNIGENT_GATEWAY_FORCE=1 to overwrite)")
+    if always or force or not target.exists():
+        write_atomic(target, content, mode)
+        log(f"render  {target}")
+        return
+    if not catalog_stale:
+        log(f"keep    {target} (catalog unchanged)")
+        return
+    if callable(merge):
+        merge(target, content)
         return
     write_atomic(target, content, mode)
-    log(f"render  {target}")
+    log(f"update  {target} (catalog changed)")
 
 
-def write_omnigent_config(target: Path, rendered: str, *, force: bool) -> None:
+def merge_opencode(target: Path, rendered: str) -> None:
+    """Replace catalog default + cliproxy model map; keep plugins and extra providers."""
+    existing = _load_json_object(target)
+    new = json.loads(rendered)
+    if existing is None or not isinstance(new, dict):
+        write_atomic(target, rendered)
+        log(f"update  {target} (catalog changed; replaced unreadable file)")
+        return
+    existing["model"] = new["model"]
+    providers = existing.get("provider")
+    if not isinstance(providers, dict):
+        existing["provider"] = new["provider"]
+    else:
+        new_clip = new.get("provider", {}).get(PROVIDER_ID)
+        clip = providers.get(PROVIDER_ID)
+        if not isinstance(new_clip, dict):
+            pass
+        elif not isinstance(clip, dict):
+            providers[PROVIDER_ID] = new_clip
+        else:
+            clip["models"] = new_clip["models"]
+    write_atomic(target, _dump_json(existing))
+    log(f"update  {target} (catalog changed; model + {PROVIDER_ID} models)")
+
+
+def merge_pi_models(target: Path, rendered: str) -> None:
+    """Replace cliproxy.models; keep other providers and cliproxy transport keys."""
+    existing = _load_json_object(target)
+    new = json.loads(rendered)
+    if existing is None or not isinstance(new, dict):
+        write_atomic(target, rendered)
+        log(f"update  {target} (catalog changed; replaced unreadable file)")
+        return
+    providers = existing.get("providers")
+    new_clip = new.get("providers", {}).get(PROVIDER_ID)
+    if not isinstance(providers, dict) or not isinstance(new_clip, dict):
+        existing["providers"] = new.get("providers", {})
+    else:
+        clip = providers.get(PROVIDER_ID)
+        if not isinstance(clip, dict):
+            providers[PROVIDER_ID] = new_clip
+        else:
+            clip["models"] = new_clip["models"]
+    write_atomic(target, _dump_json(existing))
+    log(f"update  {target} (catalog changed; {PROVIDER_ID} models)")
+
+
+def merge_pi_settings(target: Path, rendered: str) -> None:
+    """Replace catalog defaults; keep user settings (theme, extra keys)."""
+    existing = _load_json_object(target)
+    new = json.loads(rendered)
+    if existing is None or not isinstance(new, dict):
+        write_atomic(target, rendered)
+        log(f"update  {target} (catalog changed; replaced unreadable file)")
+        return
+    existing["defaultProvider"] = new["defaultProvider"]
+    existing["defaultModel"] = new["defaultModel"]
+    write_atomic(target, _dump_json(existing))
+    log(f"update  {target} (catalog changed; defaults)")
+
+
+def merge_codex_config(target: Path, rendered: str) -> None:
+    """Replace root model + context window; keep other TOML tables."""
+    try:
+        new = tomllib.loads(rendered)
+        existing = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+        write_atomic(target, rendered)
+        log(f"update  {target} (catalog changed; replaced unreadable file)")
+        return
+    new_model = new.get("model")
+    if not isinstance(new_model, str) or not _MODEL_ID_RE.match(new_model):
+        raise SystemExit(f"refusing to merge: unsafe Codex model {new_model!r}")
+    text = existing
+    if re.search(r"(?m)^model\s*=", text):
+        text = re.sub(r'(?m)^model\s*=\s*"[^"]*"', f'model = "{new_model}"', text, count=1)
+    else:
+        text = f'model = "{new_model}"\n' + text
+    new_window = new.get("model_context_window")
+    if isinstance(new_window, int) and new_window > 0:
+        if re.search(r"(?m)^model_context_window\s*=", text):
+            text = re.sub(
+                r"(?m)^model_context_window\s*=\s*\d+",
+                f"model_context_window = {new_window}",
+                text,
+                count=1,
+            )
+        else:
+            text = re.sub(
+                r'(?m)^(model\s*=\s*"[^"]*"\s*)$',
+                rf"\1\nmodel_context_window = {new_window}",
+                text,
+                count=1,
+            )
+    else:
+        text = re.sub(r"(?m)^model_context_window\s*=\s*\d+\n?", "", text)
+    write_atomic(target, text)
+    log(f"update  {target} (catalog changed; model + limits)")
+
+
+def _apply_omnigent_catalog_fields(
+    existing: dict, rendered: str, *, replace_provider: bool
+) -> dict:
+    new_provider = yaml.safe_load(rendered)["providers"][PROVIDER_ID]
+    providers = existing.get("providers")
+    if not isinstance(providers, dict):
+        providers = {}
+        existing["providers"] = providers
+    if replace_provider or not isinstance(providers.get(PROVIDER_ID), dict):
+        providers[PROVIDER_ID] = new_provider
+        return existing
+    clip = providers[PROVIDER_ID]
+    for family in FAMILIES:
+        new_fam = new_provider.get(family)
+        if not isinstance(new_fam, dict):
+            continue
+        fam = clip.get(family)
+        if not isinstance(fam, dict):
+            clip[family] = new_fam
+            continue
+        for key in ("models", "context_window", "max_output_tokens"):
+            if key in new_fam:
+                fam[key] = new_fam[key]
+            else:
+                fam.pop(key, None)
+    return existing
+
+
+def write_omnigent_config(
+    target: Path, rendered: str, *, force: bool, catalog_stale: bool
+) -> None:
     """`omnigent host` stores its host identity in this file, so a FORCE
-    re-render merges only providers.cliproxy instead of replacing the file."""
+    re-render replaces only providers.cliproxy. A catalog-hash miss updates
+    family models/limits and leaves other cliproxy keys alone."""
     if not target.exists():
         write_atomic(target, rendered, 0o600)
         log(f"render  {target}")
         return
-    if not force:
-        log(f"keep    {target} (exists; set OMNIGENT_GATEWAY_FORCE=1 to overwrite)")
+    if not force and not catalog_stale:
+        log(f"keep    {target} (catalog unchanged)")
         return
     existing = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
     if not isinstance(existing, dict):
         raise SystemExit(f"refusing to merge: {target} is not a mapping")
-    providers = existing.get("providers")
-    if not isinstance(providers, dict):
-        providers = {}
-    providers[PROVIDER_ID] = yaml.safe_load(rendered)["providers"][PROVIDER_ID]
-    existing["providers"] = providers
+    _apply_omnigent_catalog_fields(existing, rendered, replace_provider=force)
     write_atomic(target, yaml.safe_dump(existing, default_flow_style=False, sort_keys=True), 0o600)
-    log(f"merge   {target} (providers.{PROVIDER_ID} replaced, other keys kept)")
+    if force:
+        log(f"merge   {target} (providers.{PROVIDER_ID} replaced, other keys kept)")
+    else:
+        log(f"update  {target} (catalog changed; {PROVIDER_ID} family models/limits)")
 
 
 def render_files(values: dict[str, str], alloc: Allocation) -> dict[str, str]:
     """Return {template name: rendered content} for every harness file."""
     anthropic_default = alloc.default("anthropic").id
     openai_default = alloc.default("openai").id
+    opencode_default = alloc.opencode_default().id
 
     claude = json.loads(_substitute("claude-managed-settings.json", values))
     claude_out = _dump_json(claude_settings(claude, alloc))
@@ -408,7 +609,7 @@ def render_files(values: dict[str, str], alloc: Allocation) -> dict[str, str]:
         tomllib.loads(content)
 
     opencode = json.loads(_substitute("opencode.json", values))
-    opencode["model"] = f"{PROVIDER_ID}/{anthropic_default}"
+    opencode["model"] = f"{PROVIDER_ID}/{opencode_default}"
     opencode["provider"][PROVIDER_ID]["models"] = opencode_models(alloc)
     opencode_out = _dump_json(opencode)
 
@@ -460,33 +661,76 @@ def render_all(env: dict[str, str]) -> None:
     alloc = apply_overrides(load_catalog(), env)
     values["ANTHROPIC_MODEL"] = alloc.default("anthropic").id
     values["OPENAI_MODEL"] = alloc.default("openai").id
+    values["OPENCODE_MODEL"] = alloc.opencode_default().id
     force = env.get("OMNIGENT_GATEWAY_FORCE", "").strip().lower() in ("1", "true", "yes")
     home = Path(env.get("HOME") or "/root")
+    config_home = Path(env.get("OMNIGENT_CONFIG_HOME", "").strip() or home / ".omnigent")
+    digest = catalog_digest()
+    stored = read_catalog_hash(catalog_hash_path(config_home))
+    catalog_stale = stored != digest
 
     log(
         f"gateway={base_url} anthropic_default={values['ANTHROPIC_MODEL']} "
-        f"openai_default={values['OPENAI_MODEL']} models={len(alloc.models)} "
+        f"openai_default={values['OPENAI_MODEL']} "
+        f"opencode_default={values['OPENCODE_MODEL']} models={len(alloc.models)} "
+        f"catalog={'stale' if catalog_stale else 'unchanged'} "
         f"key={'set' if env.get(KEY_VAR) else 'MISSING'}"
     )
     if not env.get(KEY_VAR):
         log(f"warning: {KEY_VAR} is not set; harnesses will fail to authenticate")
 
     rendered = render_files(values, alloc)
-    targets = (
-        ("claude-managed-settings.json", Path("/etc/claude-code/managed-settings.json"), True),
-        ("codex-config.toml", home / ".codex" / "config.toml", False),
-        ("opencode.json", home / ".config" / "opencode" / "opencode.json", False),
-        ("pi-models.json", home / ".pi" / "agent" / "models.json", False),
-        ("pi-settings.json", home / ".pi" / "agent" / "settings.json", False),
+    write_if_allowed(
+        MANAGED_SETTINGS_PATH,
+        rendered["claude-managed-settings.json"],
+        force=force,
+        always=True,
     )
-    for template, target, always in targets:
-        write_if_allowed(target, rendered[template], force=force, always=always)
+    write_if_allowed(
+        home / ".codex" / "config.toml",
+        rendered["codex-config.toml"],
+        force=force,
+        always=False,
+        catalog_stale=catalog_stale,
+        merge=merge_codex_config,
+    )
+    write_if_allowed(
+        home / ".config" / "opencode" / "opencode.json",
+        rendered["opencode.json"],
+        force=force,
+        always=False,
+        catalog_stale=catalog_stale,
+        merge=merge_opencode,
+    )
+    write_if_allowed(
+        home / ".pi" / "agent" / "models.json",
+        rendered["pi-models.json"],
+        force=force,
+        always=False,
+        catalog_stale=catalog_stale,
+        merge=merge_pi_models,
+    )
+    write_if_allowed(
+        home / ".pi" / "agent" / "settings.json",
+        rendered["pi-settings.json"],
+        force=force,
+        always=False,
+        catalog_stale=catalog_stale,
+        merge=merge_pi_settings,
+    )
     for key, content in rendered.items():
         if key.startswith("codex-profile/"):
             name = key.removeprefix("codex-profile/")
-            write_if_allowed(home / ".codex" / name, content, force=force, always=False)
+            write_if_allowed(
+                home / ".codex" / name,
+                content,
+                force=force,
+                always=False,
+                catalog_stale=catalog_stale,
+            )
     # OpenCode credential store (0600 like OpenCode writes it). Placeholder key;
     # the real one is opencode.json's {env:...}, which OpenCode merges on top.
+    # Not catalog-driven — rewriting would clobber extra auth.json entries.
     xdg_data = Path(env.get("XDG_DATA_HOME", "").strip() or home / ".local" / "share")
     write_if_allowed(
         xdg_data / "opencode" / "auth.json",
@@ -495,10 +739,14 @@ def render_all(env: dict[str, str]) -> None:
         always=False,
         mode=0o600,
     )
-    config_home = Path(env.get("OMNIGENT_CONFIG_HOME", "").strip() or home / ".omnigent")
     write_omnigent_config(
-        config_home / "config.yaml", rendered["omnigent-config.yaml"], force=force
+        config_home / "config.yaml",
+        rendered["omnigent-config.yaml"],
+        force=force,
+        catalog_stale=catalog_stale,
     )
+    if catalog_stale or not catalog_hash_path(config_home).is_file():
+        write_catalog_hash(catalog_hash_path(config_home), digest)
 
     # Runner-visible env. The key travels ONLY as OMNIGENT_GATEWAY_API_KEY via
     # passthrough — never mirrored into OPENAI_API_KEY, which would make Pi and

@@ -1,7 +1,7 @@
 {
   "$$schema": "https://opencode.ai/config.json",
-  "_comment": "Rendered to ~/.config/opencode/opencode.json (skipped if present). Schema: https://opencode.ai/config.json (Config.provider.<id>.{npm,name,options.baseURL,options.apiKey,models.<id>.{name,reasoning,tool_call,attachment,modalities,limit.context,limit.output}}) and packages/web/src/content/docs/providers.mdx at github.com/anomalyco/opencode; apiKey supports {env:VAR}. The entrypoint fills `model` (cliproxy/<anthropic default>) and `models` with all catalog entries from gateway-models.jsonl. @ai-sdk/openai-compatible speaks /v1/chat/completions.",
-  "model": "cliproxy/${ANTHROPIC_MODEL}",
+  "_comment": "Rendered to ~/.config/opencode/opencode.json (skipped if present). Schema: https://opencode.ai/config.json (Config.provider.<id>.{npm,name,options.baseURL,options.apiKey,models.<id>.{name,reasoning,tool_call,attachment,modalities,limit.context,limit.output}}) and packages/web/src/content/docs/providers.mdx at github.com/anomalyco/opencode; apiKey supports {env:VAR}. The entrypoint fills `model` (cliproxy/<catalog opencodeDefault>) and `models` with all catalog entries from gateway-models.jsonl. @ai-sdk/openai-compatible speaks /v1/chat/completions.",
+  "model": "cliproxy/${OPENCODE_MODEL}",
   "provider": {
     "cliproxy": {
       "npm": "@ai-sdk/openai-compatible",

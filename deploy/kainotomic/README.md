@@ -37,7 +37,7 @@ does not bounce. Tokens already present skip the wait.
 | `OMNIGENT_SERVER_URL` | Omnigent server the host daemon dials (required) |
 | `OMNIGENT_GATEWAY_BASE_URL` | CLIProxy root; default `https://openai.kainotomic.com` |
 | `OMNIGENT_GATEWAY_API_KEY` | This workspace's CLIProxy key. Env only; never written to disk |
-| `OMNIGENT_GATEWAY_ANTHROPIC_MODEL` | Overrides the catalog's anthropic default (Claude Code, Pi, OpenCode, Omnigent anthropic family) |
+| `OMNIGENT_GATEWAY_ANTHROPIC_MODEL` | Overrides the catalog's anthropic default (Claude Code, Pi, Omnigent anthropic family) |
 | `OMNIGENT_GATEWAY_OPENAI_MODEL` | Overrides the catalog's openai default (Codex, Omnigent openai family) |
 | `OMNIGENT_GATEWAY_FORCE` | `1` overwrites existing files in the persistent home |
 
@@ -47,7 +47,7 @@ does not bounce. Tokens already present skip the wait.
 per-harness model block: one CLIProxy model per line (`id`, `family`,
 `contextWindow`, `maxTokens`, `input`, `reasoning`, `thinkingLevelMap` as
 served by the gateway) plus the allocation fields `default` (one per family),
-`claudeCode` (Claude Code alias tiers) and `codexProfile`. It is JSON Lines
+`claudeCode` (Claude Code alias tiers), `codexProfile`, and `opencodeDefault`. It is JSON Lines
 rather than a `.json` template so a model is one diffable line and so the
 repo's hardcoded-model lint (which covers `.json`/`.yaml`/`.toml`/`.py`/`.sh`)
 keeps the code and templates id-free; the ids live only in this data file.
@@ -58,13 +58,19 @@ Add or re-tier a model there, rebuild, and every harness picks it up:
 | Claude Code (`/etc/claude-code/managed-settings.json`) | anthropic family only: `ANTHROPIC_MODEL` = anthropic default; `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` from `claudeCode` tiers (`haiku` is the current name for the small/fast slot; `ANTHROPIC_SMALL_FAST_MODEL` is deprecated) |
 | Codex (`~/.codex/config.toml` + `~/.codex/<codexProfile>.config.toml`) | openai default as `model` (+ `model_context_window`), `wire_api = "responses"`; one profile file per `codexProfile` model, selected with `codex --profile <name>` (codex 0.154.0 layers `$CODEX_HOME/<name>.config.toml` over `config.toml`; the legacy `[profiles.*]` tables are no longer applied) |
 | Pi (`~/.pi/agent/models.json`, `settings.json`) | all models under one `cliproxy` provider, `api: openai-responses`, with `contextWindow`/`maxTokens`/`thinkingLevelMap`/`input`; default = anthropic default |
-| OpenCode (`~/.config/opencode/opencode.json`) | all models under `provider.cliproxy` (`@ai-sdk/openai-compatible`) with `limit.context`/`limit.output`, `reasoning`, `attachment`, `modalities`; `model = cliproxy/<anthropic default>` |
+| OpenCode (`~/.config/opencode/opencode.json`) | all models under `provider.cliproxy` (`@ai-sdk/openai-compatible`) with `limit.context`/`limit.output`, `reasoning`, `attachment`, `modalities`; `model = cliproxy/<opencodeDefault>` |
 | Omnigent (`~/.omnigent/config.yaml`) | `providers.cliproxy.anthropic.models` = default + tiers, `openai.models` = default + the remaining models, `context_window`/`max_output_tokens` of each default |
 
 `OMNIGENT_GATEWAY_{ANTHROPIC,OPENAI}_MODEL` only move the defaults; an id
 outside the catalog is rendered without limits (logged as a warning).
 
-Rendered files (home files only when absent, or `OMNIGENT_GATEWAY_FORCE=1`):
+On each start the entrypoint hashes `gateway-models.jsonl` and compares it
+to `~/.omnigent/.kainotomic-catalog-hash`. A missing or different hash
+re-renders catalog-driven fields (model lists, defaults, limits) in the
+existing home files and leaves user-added keys alone. A matching hash
+skips those files. `OMNIGENT_GATEWAY_FORCE=1` still overwrites.
+
+Rendered files (created when absent; catalog-hash updates the model bits):
 
 - `~/.omnigent/config.yaml` — Omnigent's own `providers.cliproxy` (`kind:
   gateway`, `anthropic` + `openai` families, `api_key_ref:
