@@ -268,3 +268,29 @@ def test_codex_catalog_pin_lands_on_existing_home_without_hash_change(
     ]
     assert "model_catalog_json" in config.read_text(encoding="utf-8")
     assert not stale.exists()
+
+
+def test_stale_claude_1m_catalog_is_dropped_when_hash_matches(tmp_path: Path) -> None:
+    """A matching catalog hash still drops cached Claude ``[1m]`` New Chat twins."""
+    module = _load_entrypoint()
+    home, _catalog_path = _bind(module, tmp_path, _CATALOG_TWO_ANTHROPIC)
+    module.render_all(_env(home))
+
+    cache = home / ".omnigent" / "cache" / "model-catalogs"
+    cache.mkdir(parents=True)
+    stale = cache / "claude-native-old.json"
+    stale.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {"id": "factory/claude-opus-5", "model": "factory/claude-opus-5"},
+                    {"id": "opus[1m]", "model": "claude-opus-5[1m]"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    module.render_all(_env(home))
+
+    assert not stale.exists()

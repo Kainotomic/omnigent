@@ -10303,6 +10303,58 @@ async def test_probe_claude_model_options_resolves_each_alias_via_the_harness(
     ]
 
 
+async def test_probe_claude_model_options_drops_1m_aliases_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``CLAUDE_CODE_DISABLE_1M_CONTEXT`` drops the 1M twins, not the base aliases."""
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1")
+    monkeypatch.setattr(claude_native, "_CLAUDE_CODE_MANAGED_SETTINGS_PATHS", ())
+    resolutions = {
+        "sonnet": ("claude-sonnet-5", "Sonnet 5"),
+        "opus": ("claude-opus-5", "Opus 5"),
+        "fable": ("claude-fable-5", "Fable 5"),
+        "best": ("claude-fable-5", "Fable 5"),
+        "opusplan": ("claude-sonnet-5", "Opus in plan mode, else Sonnet"),
+    }
+
+    class _Run:
+        def __init__(self, stdout: bytes, returncode: int = 0) -> None:
+            self.returncode = returncode
+            self._stdout = stdout
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return self._stdout, b""
+
+    async def _fake_exec(command: str, *args: str, **kwargs: Any) -> _Run:
+        if "--model" not in args:
+            return _Run(
+                b"Usage: /model <name>. Available: sonnet, opus, haiku, fable, best, "
+                b"sonnet[1m], opus[1m], fable[1m], opusplan, default, or a full model ID.\n"
+            )
+        alias = args[args.index("--model") + 1]
+        assert not alias.endswith("[1m]"), "1M twins must not spawn a resolution run"
+        if alias == "haiku":
+            return _Run(b"", returncode=1)
+        model, label = resolutions[alias]
+        events = [
+            {"type": "system", "subtype": "init", "model": model},
+            {"type": "result", "result": f"Current model: {label} (effort: high)"},
+        ]
+        return _Run("\n".join(json.dumps(event) for event in events).encode())
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+
+    probe = await claude_native.probe_claude_model_options(None)
+
+    assert probe is not None
+    assert probe.alias_rows == [
+        {"id": "sonnet", "model": "claude-sonnet-5", "displayName": "Sonnet 5"},
+        {"id": "opus", "model": "claude-opus-5", "displayName": "Opus 5"},
+        {"id": "haiku", "model": "haiku", "displayName": "haiku"},
+        {"id": "fable", "model": "claude-fable-5", "displayName": "Fable 5"},
+    ]
+
+
 async def test_probe_claude_model_options_runs_the_harness_under_the_launch_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -10395,7 +10447,7 @@ async def test_claude_model_catalog_honors_managed_replacement_picker(
     monkeypatch.setattr(claude_native, "probe_claude_model_options", _fake_probe)
     monkeypatch.setattr(
         "omnigent.onboarding.ambient.claude_managed_model_picker",
-        lambda: (("gateway-opus", "Opus"), ("gateway-sonnet", "Sonnet")),
+        lambda paths=None: (("gateway-opus", "Opus"), ("gateway-sonnet", "Sonnet")),
     )
 
     assert await claude_native.claude_model_catalog(None) == [
@@ -10409,6 +10461,48 @@ async def test_claude_model_catalog_honors_managed_replacement_picker(
     ]
 
 
+async def test_claude_model_catalog_honors_managed_picker_with_resolved_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """replaceBuiltInOptions wins even when the host resolved a cliproxy config."""
+
+    async def _fake_probe(config: object) -> claude_native.ClaudeModelProbe:
+        del config
+        return claude_native.ClaudeModelProbe(
+            alias_rows=[
+                {
+                    "id": "sonnet[1m]",
+                    "model": "claude-sonnet-5[1m]",
+                    "displayName": "Sonnet 5 (1M context)",
+                },
+                {
+                    "id": "opus[1m]",
+                    "model": "claude-opus-5[1m]",
+                    "displayName": "Opus 5 (1M context)",
+                },
+            ],
+            default_model="factory/claude-opus-5",
+            default_label="Opus 5",
+        )
+
+    monkeypatch.setattr(claude_native, "probe_claude_model_options", _fake_probe)
+    monkeypatch.setattr(
+        "omnigent.onboarding.ambient.claude_managed_model_picker",
+        lambda paths=None: (
+            ("factory/claude-opus-5", "factory/claude-opus-5"),
+            ("factory/claude-sonnet-5", "factory/claude-sonnet-5"),
+        ),
+    )
+
+    rows = await claude_native.claude_model_catalog(_gateway_probe_config())
+    assert rows is not None
+    assert [row["id"] for row in rows] == [
+        "factory/claude-opus-5",
+        "factory/claude-sonnet-5",
+    ]
+    assert all(not str(row["id"]).endswith("[1m]") for row in rows)
+
+
 async def test_claude_model_catalog_keeps_managed_picker_when_probe_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -10419,7 +10513,7 @@ async def test_claude_model_catalog_keeps_managed_picker_when_probe_fails(
     monkeypatch.setattr(claude_native, "probe_claude_model_options", _failed_probe)
     monkeypatch.setattr(
         "omnigent.onboarding.ambient.claude_managed_model_picker",
-        lambda: (("gateway-opus", "Opus"),),
+        lambda paths=None: (("gateway-opus", "Opus"),),
     )
 
     assert await claude_native.claude_model_catalog(None) == [
@@ -10483,6 +10577,7 @@ async def test_claude_model_catalog_never_appends_an_unservable_default(
         )
 
     monkeypatch.setattr(claude_native, "probe_claude_model_options", _fake_probe)
+    monkeypatch.setattr(claude_native, "_CLAUDE_CODE_MANAGED_SETTINGS_PATHS", ())
     rows = await claude_native.claude_model_catalog(_gateway_probe_config())
     assert rows is not None
     # The unservable alias row is filtered AND the unservable default is not
@@ -10517,6 +10612,7 @@ async def test_claude_model_catalog_marks_the_launch_pin_as_default(
         )
 
     monkeypatch.setattr(claude_native, "probe_claude_model_options", _fake_probe)
+    monkeypatch.setattr(claude_native, "_CLAUDE_CODE_MANAGED_SETTINGS_PATHS", ())
     config = claude_native.ClaudeNativeUcodeConfig(
         env={
             "ANTHROPIC_BASE_URL": "https://gw.example/anthropic",
@@ -11008,6 +11104,43 @@ def test_catalog_fingerprint_includes_ambient_gateway_url(
     assert fp_no_gateway != fp_with_gateway
     assert fp_no_gateway != fp_different_gateway
     assert fp_with_gateway != fp_different_gateway
+
+
+def test_catalog_fingerprint_includes_1m_disable_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Toggling the 1M-context kill-switch must miss the previous catalog."""
+    binary = tmp_path / "claude"
+    binary.write_text("build")
+    _point_claude_at(monkeypatch, binary)
+    monkeypatch.setattr(claude_native, "_CLAUDE_CODE_MANAGED_SETTINGS_PATHS", ())
+    monkeypatch.delenv("CLAUDE_CODE_DISABLE_1M_CONTEXT", raising=False)
+
+    before = claude_native.claude_catalog_fingerprint(None)
+    monkeypatch.setenv("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1")
+    after = claude_native.claude_catalog_fingerprint(None)
+
+    assert before != after
+
+
+def test_catalog_fingerprint_includes_managed_picker_for_resolved_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A replaceBuiltInOptions picker is part of the key even under cliproxy."""
+    binary = tmp_path / "claude"
+    binary.write_text("build")
+    _point_claude_at(monkeypatch, binary)
+    monkeypatch.setattr(claude_native, "_CLAUDE_CODE_MANAGED_SETTINGS_PATHS", ())
+    config = _gateway_probe_config()
+
+    before = claude_native.claude_catalog_fingerprint(config)
+    monkeypatch.setattr(
+        "omnigent.onboarding.ambient.claude_managed_model_picker",
+        lambda paths=None: (("factory/claude-opus-5", "factory/claude-opus-5"),),
+    )
+    after = claude_native.claude_catalog_fingerprint(config)
+
+    assert before != after
 
 
 async def test_claude_model_catalog_filters_canonical_ids_for_ambient_gateway(

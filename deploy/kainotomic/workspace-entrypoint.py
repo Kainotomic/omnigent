@@ -476,15 +476,37 @@ def codex_model_catalog(alloc: Allocation) -> dict:
 
 
 def invalidate_codex_model_caches(config_home: Path) -> None:
-    """Drop Omnigent's stored Codex probe so the next host start re-lists."""
+    """Drop stored Codex/Claude probes so the next host start re-lists."""
     catalogs = config_home / "cache" / "model-catalogs"
     if catalogs.is_dir():
-        for path in catalogs.glob("codex-native-*.json"):
+        for path in (
+            *catalogs.glob("codex-native-*.json"),
+            *catalogs.glob("claude-native-*.json"),
+        ):
             with contextlib.suppress(OSError):
                 path.unlink()
     probe = config_home / "cache" / "codex-model-probe"
     if probe.is_dir():
         shutil.rmtree(probe, ignore_errors=True)
+
+
+def claude_catalog_has_1m_aliases(config_home: Path) -> bool:
+    """True when a cached Claude New Chat catalog still lists ``[1m]`` twins."""
+    catalogs = config_home / "cache" / "model-catalogs"
+    if not catalogs.is_dir():
+        return False
+    for path in catalogs.glob("claude-native-*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        rows = payload.get("models") if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if isinstance(row, dict) and str(row.get("id", "")).endswith("[1m]"):
+                return True
+    return False
 
 
 def opencode_models(alloc: Allocation) -> dict[str, dict]:
@@ -910,7 +932,7 @@ def render_all(env: dict[str, str]) -> None:
             existing_toml = ""
         if "model_catalog_json" not in existing_toml:
             merge_codex_config(codex_config, rendered["codex-config.toml"])
-    if catalog_stale or catalog_missing or force:
+    if catalog_stale or catalog_missing or force or claude_catalog_has_1m_aliases(config_home):
         invalidate_codex_model_caches(config_home)
     write_if_allowed(
         home / ".config" / "opencode" / "opencode.json",
@@ -1047,6 +1069,7 @@ def wait_for_login(env: dict[str, str], server_url: str) -> None:
 
 def main(argv: list[str]) -> None:
     env = dict(os.environ)
+    env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
     render_all(env)
     if argv:
         cmd = argv

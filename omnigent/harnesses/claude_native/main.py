@@ -199,6 +199,7 @@ _BEDROCK_AUTH_COMMAND_TIMEOUT_S = 15.0
 _CLAUDE_CODE_NESTED_SESSION_ENV = "CLAUDECODE"
 _CLAUDE_CODE_API_KEY_HELPER_TTL_ENV = "CLAUDE_CODE_API_KEY_HELPER_TTL_MS"
 _CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS_ENV = "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"
+_CLAUDE_CODE_DISABLE_1M_CONTEXT_ENV = "CLAUDE_CODE_DISABLE_1M_CONTEXT"
 _CLAUDE_CODE_USE_GATEWAY_ENV = "CLAUDE_CODE_USE_GATEWAY"
 #: Kill-switch Claude Code treats as covering nonessential startup traffic;
 #: the probe strips it so speed knobs never mask harness output.
@@ -282,6 +283,43 @@ def _managed_settings_paths() -> tuple[Path, ...]:
     from omnigent.onboarding.ambient import CLAUDE_CODE_MANAGED_SETTINGS_PATHS
 
     return CLAUDE_CODE_MANAGED_SETTINGS_PATHS
+
+
+def _env_flag_enabled(value: object) -> bool:
+    return isinstance(value, str) and value.strip().lower() not in ("", "0", "false")
+
+
+def _claude_managed_model_picker() -> tuple[tuple[str, str], ...]:
+    from omnigent.onboarding.ambient import claude_managed_model_picker
+
+    return claude_managed_model_picker(_managed_settings_paths())
+
+
+def _managed_disable_1m_context() -> bool:
+    for path in _managed_settings_paths():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        raw_env = payload.get("env")
+        env = raw_env if isinstance(raw_env, dict) else {}
+        return _env_flag_enabled(env.get(_CLAUDE_CODE_DISABLE_1M_CONTEXT_ENV))
+    return False
+
+
+def _claude_1m_context_disabled(
+    claude_config: ClaudeNativeUcodeConfig | None,
+) -> bool:
+    """True when Claude Code's 1M-context twins should stay out of the picker."""
+    if _env_flag_enabled(os.environ.get(_CLAUDE_CODE_DISABLE_1M_CONTEXT_ENV)):
+        return True
+    if claude_config is not None and _env_flag_enabled(
+        claude_config.env.get(_CLAUDE_CODE_DISABLE_1M_CONTEXT_ENV)
+    ):
+        return True
+    return _managed_disable_1m_context()
 
 
 _CLAUDE_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -1194,6 +1232,8 @@ async def probe_claude_model_options(
     # model), which is exactly what the harness's ``default`` alias does —
     # listing it again would duplicate that row.
     aliases = [alias for alias in aliases if alias != "default"]
+    if _claude_1m_context_disabled(claude_config):
+        aliases = [alias for alias in aliases if not alias.endswith("[1m]")]
     resolutions = await _resolve_claude_model_aliases(claude_config, aliases)
     alias_rows: list[dict[str, object]] = []
     seen_models: set[object] = set()
@@ -1229,7 +1269,6 @@ def claude_catalog_fingerprint(claude_config: ClaudeNativeUcodeConfig | None) ->
     """
     from omnigent.claude_launcher import resolve_claude_launch
     from omnigent.models.model_catalog_store import binary_identity, fingerprint_of
-    from omnigent.onboarding.ambient import claude_managed_model_picker
 
     command, _ = resolve_claude_launch("claude", [])
     ambient_gateway = os.environ.get(_UCODE_CLAUDE_BASE_URL_ENV) if claude_config is None else None
@@ -1240,7 +1279,8 @@ def claude_catalog_fingerprint(claude_config: ClaudeNativeUcodeConfig | None) ->
         claude_config.model if claude_config is not None else None,
         binary_identity(command),
         ambient_gateway,
-        claude_managed_model_picker() if claude_config is None else None,
+        _claude_managed_model_picker(),
+        _claude_1m_context_disabled(claude_config),
     )
 
 
@@ -1263,9 +1303,7 @@ async def claude_model_catalog(
     :param claude_config: The resolved launch config, or ``None``.
     :returns: Catalog rows, or ``None`` when the probe failed.
     """
-    from omnigent.onboarding.ambient import claude_managed_model_picker
-
-    managed_picker = claude_managed_model_picker() if claude_config is None else ()
+    managed_picker = _claude_managed_model_picker()
     managed_rows: list[dict[str, object]] = [
         {"id": model, "model": model, "displayName": label} for model, label in managed_picker
     ]
