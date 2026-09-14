@@ -1,31 +1,10 @@
-# Maintainers of omnigent-ai/omnigent
+# Maintainers of Kainotomic/omnigent
 # One bare GitHub username per line. Comments start with #.
-aravind-segu
-bbqiu
-ckcuslife-source
-daniellok-db
-dbczumar
-dennyglee
-dhruv0811
-Edwinhe03
-fanzeyi
-kerryspchang
-kunyuchen
-lisancao
-mahesh-venkatachalam
-mateiz
-newfront
-PattaraS
-rahulrav1
-SabhyaC26
-serena-ruan
-shivam5
-TomeHirata
-xq-yin
-hzub
-zhengwin
-ajayalfred
-yaoharry
-marktai
-arthivjkumar
-Leemoonsoo
+#
+# Read only by .github/kaino/areas.test.js, which checks that every owner in
+# areas.json appears here. A maintainer need not be an areas.json owner: keep
+# someone here and out of `owners` to leave them off the review rotation.
+appletechie
+qkal
+SannidhyaSah
+kainotomic-inc

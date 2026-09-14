@@ -33,17 +33,17 @@
     "               MUST come before their more-specific children:",
     "                 - 'web/' before 'web/electron/' and 'web/ios/'",
     "                 - 'omnigent/inner/' before every 'omnigent/inner/<harness>_'.",
-    "  owners     - candidate reviewers/assignees. Must be maintainers in",
-    "               .github/MAINTAINER. 2+ each incl. owners_paused. Edit these freely: the",
-    "               reviewer-logic tests run against a frozen fixture",
-    "               (auto-assign-reviewer.fixture.json), so ownership changes here",
-    "               do not churn them. areas.test.js validates this file (every",
-    "               owner in MAINTAINER, real comp:* label, 2+ owners, path",
-    "               resolution).",
-    "  owners_paused - optional. Owners temporarily benched (e.g. OOO). Ignored by",
-    "               every reader -- only `owners` is used for routing -- so this is",
-    "               the 'commented out, not deleted' form: to re-activate someone,",
-    "               move their login from owners_paused back into owners."
+    "  owners     - candidate reviewers/assignees. Must be listed in",
+    "               .github/MAINTAINER. 1+ each. Every area currently carries the",
+    "               whole roster, so selection is pure load-balancing (fewest open",
+    "               review requests wins). Narrow an area's owners to route it to",
+    "               specific people. Edit freely: the reviewer-logic tests run",
+    "               against a frozen fixture (auto-assign-reviewer.fixture.json),",
+    "               so ownership changes here do not churn them.",
+    "",
+    "  label / priority_label / weight / weight_source / definition are vestigial:",
+    "  they fed the issue-triage workflow this fork does not run. Left in place so",
+    "  upstream merges that touch them stay clean text merges."
   ],
   "areas": [
     {
@@ -57,9 +57,10 @@
         ".github/"
       ],
       "owners": [
-        "PattaraS",
-        "dhruv0811",
-        "TomeHirata"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -73,8 +74,10 @@
         "web/"
       ],
       "owners": [
-        "serena-ruan",
-        "daniellok-db"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -88,9 +91,10 @@
         "web/electron/"
       ],
       "owners": [
-        "fanzeyi",
-        "serena-ruan",
-        "daniellok-db"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -104,9 +108,10 @@
         "web/ios/"
       ],
       "owners": [
-        "serena-ruan",
-        "fanzeyi",
-        "daniellok-db"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -120,9 +125,10 @@
         "web/android/"
       ],
       "owners": [
-        "serena-ruan",
-        "fanzeyi",
-        "daniellok-db"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -136,14 +142,10 @@
         "omnigent/inner/"
       ],
       "owners": [
-        "dhruv0811",
-        "TomeHirata",
-        "bbqiu",
-        "fanzeyi",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -157,13 +159,10 @@
         "omnigent/runner/"
       ],
       "owners": [
-        "dhruv0811",
-        "bbqiu",
-        "fanzeyi",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -177,13 +176,10 @@
         "omnigent/runtime/"
       ],
       "owners": [
-        "dhruv0811",
-        "bbqiu",
-        "fanzeyi",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -197,14 +193,10 @@
         "omnigent/server/"
       ],
       "owners": [
-        "dhruv0811",
-        "TomeHirata",
-        "bbqiu",
-        "fanzeyi",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -226,9 +218,10 @@
         "omnigent/server/routes/device_auth.py"
       ],
       "owners": [
-        "dhruv0811",
-        "TomeHirata",
-        "fanzeyi"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -242,8 +235,10 @@
         "omnigent/onboarding/"
       ],
       "owners": [
-        "dhruv0811",
-        "fanzeyi"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -257,10 +252,10 @@
         "omnigent/policies/"
       ],
       "owners": [
-        "TomeHirata"
-      ],
-      "owners_paused": [
-        "ckcuslife-source"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -274,9 +269,10 @@
         "omnigent/spec/"
       ],
       "owners": [
-        "TomeHirata",
-        "bbqiu",
-        "dbczumar"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -290,8 +286,10 @@
         "omnigent/llms/"
       ],
       "owners": [
-        "dhruv0811",
-        "PattaraS"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -305,10 +303,10 @@
         "omnigent/host/"
       ],
       "owners": [
-        "fanzeyi",
-        "dhruv0811",
-        "bbqiu",
-        "dbczumar"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -322,9 +320,10 @@
         "omnigent/sandbox/"
       ],
       "owners": [
-        "dhruv0811",
-        "fanzeyi",
-        "dbczumar"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -338,13 +337,10 @@
         "omnigent/db/"
       ],
       "owners": [
-        "bbqiu",
-        "fanzeyi",
-        "dhruv0811",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -358,16 +354,10 @@
         "omnigent/stores/"
       ],
       "owners": [
-        "bbqiu",
-        "fanzeyi",
-        "dhruv0811",
-        "serena-ruan",
-        "daniellok-db",
-        "TomeHirata",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -381,13 +371,10 @@
         "omnigent/terminals/"
       ],
       "owners": [
-        "fanzeyi",
-        "dhruv0811",
-        "bbqiu",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -401,14 +388,10 @@
         "omnigent/tools/"
       ],
       "owners": [
-        "dhruv0811",
-        "TomeHirata",
-        "bbqiu",
-        "fanzeyi",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -422,8 +405,10 @@
         "omnigent/entities/"
       ],
       "owners": [
-        "daniellok-db",
-        "TomeHirata"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -437,11 +422,10 @@
         "omnigent/repl/"
       ],
       "owners": [
-        "dhruv0811",
-        "fanzeyi",
-        "serena-ruan",
-        "daniellok-db",
-        "dbczumar"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -455,9 +439,10 @@
         "omnigent/resources/"
       ],
       "owners": [
-        "fanzeyi",
-        "serena-ruan",
-        "daniellok-db"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -471,9 +456,10 @@
         "deploy/"
       ],
       "owners": [
-        "dhruv0811",
-        "PattaraS",
-        "dbczumar"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -487,14 +473,10 @@
         "sdks/"
       ],
       "owners": [
-        "dhruv0811",
-        "fanzeyi",
-        "TomeHirata",
-        "bbqiu",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -509,14 +491,10 @@
         "omnigent/claude_native"
       ],
       "owners": [
-        "dhruv0811",
-        "TomeHirata",
-        "bbqiu",
-        "fanzeyi",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -533,14 +511,10 @@
         "omnigent/codex_native"
       ],
       "owners": [
-        "dhruv0811",
-        "TomeHirata",
-        "bbqiu",
-        "fanzeyi",
-        "dbczumar"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -555,8 +529,10 @@
         "omnigent/cursor_native"
       ],
       "owners": [
-        "dhruv0811",
-        "dbczumar"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -573,8 +549,10 @@
         "omnigent/onboarding/gemini_auth.py"
       ],
       "owners": [
-        "TomeHirata",
-        "PattaraS"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -590,8 +568,10 @@
         "omnigent/onboarding/goose_auth.py"
       ],
       "owners": [
-        "dhruv0811",
-        "PattaraS"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -606,8 +586,10 @@
         "omnigent/hermes_native"
       ],
       "owners": [
-        "dhruv0811",
-        "TomeHirata"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -622,11 +604,10 @@
         "omnigent/kimi_native"
       ],
       "owners": [
-        "dhruv0811",
-        "fanzeyi"
-      ],
-      "owners_paused": [
-        "aravind-segu"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -641,9 +622,10 @@
         "omnigent/kiro_native"
       ],
       "owners": [
-        "PattaraS",
-        "TomeHirata",
-        "dhruv0811"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -659,10 +641,10 @@
         "omnigent/onboarding/opencode_auth.py"
       ],
       "owners": [
-        "dhruv0811",
-        "PattaraS",
-        "TomeHirata",
-        "dbczumar"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -677,8 +659,10 @@
         "omnigent/pi_native"
       ],
       "owners": [
-        "TomeHirata",
-        "dhruv0811"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -693,9 +677,10 @@
         "omnigent/qwen_native"
       ],
       "owners": [
-        "serena-ruan",
-        "dhruv0811",
-        "TomeHirata"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     },
     {
@@ -710,9 +695,10 @@
         "omnigent/onboarding/copilot_auth.py"
       ],
       "owners": [
-        "PattaraS",
-        "TomeHirata",
-        "dhruv0811"
+        "appletechie",
+        "qkal",
+        "SannidhyaSah",
+        "kainotomic-inc"
       ]
     }
   ]
