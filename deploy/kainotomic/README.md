@@ -100,8 +100,8 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt4 \
 
 1. Server: project *Kainogent* → Create Compose → provider **Raw**, paste
    `docker-compose.server.yaml`, fill the `${VAR}`s from `.env.example` in the
-   Environment tab, replace `sha256:PLACEHOLDER` with the pushed server digest.
-   Volumes have fixed names (`omnigent-kt-postgres-data`, `omnigent-kt-data`)
+   Environment tab. The image is pinned by digest (published tag
+   `kainotomic-v0.14.0-kt4`). Volumes have fixed names (`omnigent-kt-postgres-data`, `omnigent-kt-data`)
    and cannot collide with the stopped `omnigent-server-do_*` volumes.
    Routing is **label-only**: do not add a Dokploy domain row to this compose
    (Dokploy would generate a second Traefik router for
@@ -112,8 +112,8 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt4 \
    two routers must never be live at the same time.
 2. Workspaces: project *Kainogent Workspaces*, one raw compose per user from
    `docker-compose.workspace.yaml` with that user's `OMNIGENT_SERVER_URL` and
-   `OMNIGENT_GATEWAY_API_KEY`; replace `sha256:PLACEHOLDER` with the host
-   digest. The `egress` sidecar rejects traffic to `OMNIGENT_EGRESS_DENY_IP`
+   `OMNIGENT_GATEWAY_API_KEY`; the host image is pinned by digest (same
+   published tag). The `egress` sidecar rejects traffic to `OMNIGENT_EGRESS_DENY_IP`
    (dokploy-root) exactly like the legacy `nft` script. After the first start,
    enroll with `docker compose exec host omnigent login "$OMNIGENT_SERVER_URL"`
    and restart the `host` service.
@@ -132,8 +132,13 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt4 \
    which re-joins the live namespace and turns healthy within ~10 s. No
    autoheal container is used.
 
-## Placeholders to fill
+## Images and placeholders
 
-- `ghcr.io/kainotomic/omnigent-server@sha256:PLACEHOLDER` (server compose)
-- `ghcr.io/kainotomic/omnigent-host@sha256:PLACEHOLDER` (workspace compose, twice)
-- every value in `.env.example` (Dokploy Environment tab, never committed)
+Both compose files pin `ghcr.io/kainotomic/omnigent-{server,host}` by digest
+(published from `kainotomic-publish-images.yml`; the packages are private, so
+the pulling host needs a `docker login ghcr.io` with `read:packages`). To roll
+a new build: run the workflow, take the digests from its "Report digests"
+step, replace the `@sha256:` values (host appears twice), commit.
+
+Still to fill per deployment: every value in `.env.example` (Dokploy
+Environment tab, never committed).

@@ -1,17 +1,14 @@
 # Kainotomic workspace image: upstream `--target host` plus pinned harness
 # CLIs, tini, ripgrep, and the gateway-config entrypoint.
 #
-# Two-step build (nothing is published to ghcr.io/kainotomic yet), from the
-# repo root:
+# Two-step build, from the repo root (the same two steps the publish workflow
+# runs; the base is built locally and never pushed on its own):
 #
 #   docker build -f deploy/docker/Dockerfile --target host \
 #       --build-arg EXTRA_HARNESS_CLIS=opencode@1.18.30 \
 #       -t omnigent-host-base:b203ba4c .
 #   docker build -f deploy/kainotomic/Dockerfile.host \
 #       -t omnigent-host:b203ba4c-kt4 .
-#
-# Once the base is published, point BASE_IMAGE at the immutable digest instead:
-#   --build-arg BASE_IMAGE=ghcr.io/kainotomic/omnigent-host@sha256:<digest>
 ARG BASE_IMAGE=omnigent-host-base:b203ba4c
 FROM ${BASE_IMAGE}
 
