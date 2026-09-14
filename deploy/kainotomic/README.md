@@ -116,8 +116,8 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt5 \
    two routers must never be live at the same time.
 2. Workspaces: project *Kainogent Workspaces*, one raw compose per user from
    `docker-compose.workspace.yaml` with that user's `OMNIGENT_SERVER_URL` and
-   `OMNIGENT_GATEWAY_API_KEY`; the host image is pinned by digest (same
-   published tag). The `egress` sidecar rejects traffic to `OMNIGENT_EGRESS_DENY_IP`
+   `OMNIGENT_GATEWAY_API_KEY`; the host image is pinned by digest (published tag
+   `kainotomic-v0.14.0-kt5`). The `egress` sidecar rejects traffic to `OMNIGENT_EGRESS_DENY_IP`
    (dokploy-root) exactly like the legacy `nft` script. After the first start
    the host stays up waiting for login (no crash-loop). Enroll with:
 
