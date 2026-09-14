@@ -11,7 +11,7 @@ unmodified, the workspace image is upstream's `host` target plus this overlay.
 docker build -f deploy/docker/Dockerfile --target runtime -t omnigent-server:b203ba4c .
 docker build -f deploy/docker/Dockerfile --target host \
     --build-arg EXTRA_HARNESS_CLIS=opencode@1.18.30 -t omnigent-host-base:b203ba4c .
-docker build -f deploy/kainotomic/Dockerfile.host -t omnigent-host:b203ba4c-kt4 .
+docker build -f deploy/kainotomic/Dockerfile.host -t omnigent-host:b203ba4c-kt5 .
 ```
 
 `Dockerfile.host` pins `@anthropic-ai/claude-code`, `@openai/codex`,
@@ -25,8 +25,12 @@ and `ghcr.io/kainotomic/omnigent-host` (`workflow_dispatch` or a
 ## Workspace runtime contract
 
 `workspace-entrypoint.py` runs under `tini`, renders the templates in
-`harness-templates/` and execs `omnigent host --server "$OMNIGENT_SERVER_URL"
---non-interactive`.
+`harness-templates/`, waits until a usable login exists at
+`$OMNIGENT_DATA_DIR/auth_tokens.json` or `~/.omnigent/auth_tokens.json` (same
+path as `omnigent/cli_auth.py`), then execs `omnigent host --server
+"$OMNIGENT_SERVER_URL" --non-interactive`. Without tokens the process stays
+up (logs every 30s) so `docker exec` login is safe; `restart: unless-stopped`
+does not bounce. Tokens already present skip the wait.
 
 | Env var | Purpose |
 |---|---|
@@ -92,7 +96,7 @@ whenever the gateway's inventory changes.
 Dry run without a server:
 
 ```sh
-docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt4 \
+docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt5 \
     sh -c 'cat /etc/claude-code/managed-settings.json ~/.codex/config.toml'
 ```
 
@@ -114,15 +118,27 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt4 \
    `docker-compose.workspace.yaml` with that user's `OMNIGENT_SERVER_URL` and
    `OMNIGENT_GATEWAY_API_KEY`; the host image is pinned by digest (same
    published tag). The `egress` sidecar rejects traffic to `OMNIGENT_EGRESS_DENY_IP`
-   (dokploy-root) exactly like the legacy `nft` script. After the first start,
-   enroll with `docker compose exec host omnigent login "$OMNIGENT_SERVER_URL"`
-   and restart the `host` service.
+   (dokploy-root) exactly like the legacy `nft` script. After the first start
+   the host stays up waiting for login (no crash-loop). Enroll with:
 
-   `host` shares `egress`'s network namespace. The `host` healthcheck is
-   `pgrep -f '[o]mnigent host' && curl -fsS --max-time 5
-   "$OMNIGENT_SERVER_URL/health"`, so a dead namespace (or an unreachable
-   server) shows as `unhealthy` after `start_period` + 12 failed probes
-   (~2.5 min). `depends_on … restart: true` restarts `host` when a Compose
+   ```sh
+   docker exec -it omnigent-kt-ws-<slug>-host-1 omnigent login "$OMNIGENT_SERVER_URL"
+   ```
+
+   Example for ssah: `docker exec -it omnigent-kt-ws-ssah-host-1 omnigent login
+   https://kainogent.kainotomic.com`. Finish Google in the printed URL. The
+   waiter polls `auth_tokens.json` and execs the host daemon when the file
+   is usable — do not stop the container or `docker run` a second login
+   process. A restart after login is optional.
+
+   `host` shares `egress`'s network namespace. The `host` healthcheck passes
+   when `omnigent host` is running and `curl "$OMNIGENT_SERVER_URL/health"`
+   succeeds, **or** when the entrypoint is still waiting for login
+   (`pgrep … workspace-entrypoint`). A dead namespace (or an unreachable
+   server) after the daemon has started shows as `unhealthy` after
+   `start_period` + 12 failed probes (~2.5 min). Docker does not restart on
+   unhealthy (`restart: unless-stopped` only acts on process exit).
+   `depends_on … restart: true` restarts `host` when a Compose
    command restarts/recreates `egress`; a Docker-runtime restart of `egress`
    (crash, `docker restart`) is not covered — `host` keeps the dead namespace
    and its daemon keeps running, so the unhealthy `host` is the only signal.

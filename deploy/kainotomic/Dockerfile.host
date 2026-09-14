@@ -8,7 +8,7 @@
 #       --build-arg EXTRA_HARNESS_CLIS=opencode@1.18.30 \
 #       -t omnigent-host-base:b203ba4c .
 #   docker build -f deploy/kainotomic/Dockerfile.host \
-#       -t omnigent-host:b203ba4c-kt4 .
+#       -t omnigent-host:b203ba4c-kt5 .
 ARG BASE_IMAGE=omnigent-host-base:b203ba4c
 FROM ${BASE_IMAGE}
 
@@ -72,9 +72,10 @@ LABEL org.opencontainers.image.source="https://github.com/Kainotomic/omnigent" \
 
 WORKDIR /workspace
 
-# With no args the entrypoint renders the harness configs and execs
+# With no args the entrypoint renders the harness configs, waits for a usable
+# ~/.omnigent/auth_tokens.json, then execs
 # `omnigent host --server "$OMNIGENT_SERVER_URL" --non-interactive`; any args
-# are exec'd instead (still after rendering). The egress sidecar overrides
-# `entrypoint:` entirely, so it never renders into its read-only root.
+# are exec'd instead (still after rendering, no wait). The egress sidecar
+# overrides `entrypoint:` entirely, so it never renders into its read-only root.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/omnigent-workspace-entrypoint"]
 CMD []

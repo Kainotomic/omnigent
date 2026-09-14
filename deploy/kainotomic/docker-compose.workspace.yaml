@@ -11,8 +11,10 @@
 #
 # Per-user env (Dokploy compose Environment tab): OMNIGENT_SERVER_URL,
 # OMNIGENT_GATEWAY_API_KEY, optional OMNIGENT_GATEWAY_* overrides.
-# Enrollment after first start: `docker compose exec host omnigent login
-# "$OMNIGENT_SERVER_URL"` (browser ticket), then restart the host service.
+# Enrollment after first start: `docker exec -it <project>-host-1 omnigent login
+# "$OMNIGENT_SERVER_URL"` (browser ticket). The entrypoint waits for a usable
+# ~/.omnigent/auth_tokens.json and then execs the host daemon — no docker-run
+# workaround, and no restart unless you want one.
 
 services:
   egress:
@@ -79,13 +81,18 @@ services:
     pids_limit: 512
     stop_grace_period: 60s
     healthcheck:
-      # Daemon alive AND the server reachable through the egress namespace.
-      # [o] keeps pgrep from matching the healthcheck's own sh -c wrapper; the
-      # curl catches a dead netns after a runtime restart of egress (Docker
-      # does not restart on unhealthy: run `docker compose restart host`).
+      # Host running + server reachable through the egress namespace, OR the
+      # entrypoint is still waiting for `omnigent login`. [o] keeps pgrep from
+      # matching the healthcheck's own sh -c wrapper. Docker does not restart
+      # on unhealthy (`restart: unless-stopped` only acts on process exit); a
+      # dead netns after a runtime restart of egress is still the curl miss
+      # once the daemon has started — recover with `docker compose restart host`.
       test:
         - CMD-SHELL
-        - pgrep -f '[o]mnigent host' >/dev/null && curl -fsS --max-time 5 "$$OMNIGENT_SERVER_URL/health" >/dev/null
+        - >-
+          pgrep -f '[o]mnigent host' >/dev/null
+          && curl -fsS --max-time 5 "$$OMNIGENT_SERVER_URL/health" >/dev/null
+          || pgrep -f '[o]mnigent-workspace-entrypoint' >/dev/null
       interval: 10s
       timeout: 8s
       retries: 12

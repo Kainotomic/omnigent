@@ -1,7 +1,12 @@
 #!/opt/venv/bin/python
 """Kainotomic workspace entrypoint: render harness gateway configs, exec the host.
 
-Runs under tini as the container's main process. Reads only these variables
+Runs under tini (PID 1). This script is tini's child and must handle SIGTERM
+itself. Before exec'ing `omnigent host` it waits for a usable login at
+``$OMNIGENT_DATA_DIR/auth_tokens.json`` or ``~/.omnigent/auth_tokens.json``
+(same path as ``omnigent/cli_auth.py``) so an unenrolled workspace stays
+up for ``docker exec … omnigent login`` instead of crash-looping. Reads
+only these variables
 (all secret-free except the API key, which is never written to disk or logged):
 
   OMNIGENT_GATEWAY_BASE_URL        CLIProxy root, default https://openai.kainotomic.com
@@ -48,8 +53,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import string
 import sys
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -507,6 +514,71 @@ def render_all(env: dict[str, str]) -> None:
     env["OMNIGENT_RUNNER_ENV_PASSTHROUGH"] = ",".join(passthrough)
 
 
+# Same path as omnigent/cli_auth.py::_token_file_path (OMNIGENT_DATA_DIR, else
+# $HOME/.omnigent/auth_tokens.json). Duplicated here so the overlay does not
+# import the application package at PID-1 startup.
+_TOKEN_FILE_NAME = "auth_tokens.json"
+_WAIT_LOG_INTERVAL_S = 30.0
+_WAIT_POLL_INTERVAL_S = 1.0
+
+
+def token_file_path(env: dict[str, str]) -> Path:
+    data_dir = env.get("OMNIGENT_DATA_DIR", "").strip()
+    if data_dir:
+        return Path(data_dir).expanduser() / _TOKEN_FILE_NAME
+    home = Path(env.get("HOME") or "/root")
+    return home / ".omnigent" / _TOKEN_FILE_NAME
+
+
+def has_usable_login(path: Path, server_url: str) -> bool:
+    """True when the tokens file has a session JWT for this server URL."""
+    if not path.is_file():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    entry = data.get(server_url.rstrip("/"))
+    if not isinstance(entry, dict):
+        return False
+    token = entry.get("token")
+    return isinstance(token, str) and bool(token.strip())
+
+
+def wait_for_login(env: dict[str, str], server_url: str) -> None:
+    """Block until a usable login exists, or exit 0 on SIGTERM/SIGINT.
+
+    Polls (does not busy-spin). Logs every 30s so operators know
+    ``docker exec … omnigent login`` is safe. tini forwards SIGTERM here.
+    """
+    path = token_file_path(env)
+    if has_usable_login(path, server_url):
+        return
+
+    def _handle_term(_signum: int, _frame: object) -> None:
+        log("received stop signal while waiting for login; exiting")
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _handle_term)
+    signal.signal(signal.SIGINT, _handle_term)
+    msg = f"waiting for omnigent login ({path}); docker exec is safe — container will not restart"
+    log(msg)
+    last_log = time.monotonic()
+    while True:
+        if has_usable_login(path, server_url):
+            log(f"login found at {path}; starting host")
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            return
+        now = time.monotonic()
+        if now - last_log >= _WAIT_LOG_INTERVAL_S:
+            log(msg)
+            last_log = now
+        time.sleep(_WAIT_POLL_INTERVAL_S)
+
+
 def main(argv: list[str]) -> None:
     env = dict(os.environ)
     render_all(env)
@@ -516,6 +588,7 @@ def main(argv: list[str]) -> None:
         server = env.get("OMNIGENT_SERVER_URL", "").strip()
         if not server:
             raise SystemExit("OMNIGENT_SERVER_URL is required (or pass a command to run)")
+        wait_for_login(env, server)
         cmd = ["omnigent", "host", "--server", server, "--non-interactive"]
     log("exec " + " ".join(cmd))
     os.execvpe(cmd[0], cmd, env)
