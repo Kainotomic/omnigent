@@ -57,7 +57,11 @@ jobs:
 
   python:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      # setup.py builds the web SPA during `uv sync` unless this is set; this job
+      # never serves the bundle.
+      OMNIGENT_SKIP_WEB_UI: "true"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -65,10 +69,24 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --all-extras --dev
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run pytest -q
+      # `--all-extras` does not work here: antigravity and cwsandbox are declared
+      # conflicting extras. `--extra all` is the aggregate the project provides.
+      # --locked fails on a stale lockfile instead of silently re-resolving.
+      - run: uv sync --locked --extra all --group test --group lint
+      # Match what pre-commit feeds ruff: tracked Python files only (its hooks
+      # are types:[python], so notebook fixtures under web/ were never linted),
+      # with --force-exclude so explicit paths still honour ruff's own excludes
+      # for generated files like *_pb2.py.
+      - run: git ls-files -z '*.py' | xargs -0 uv run ruff check --force-exclude
+      - run: git ls-files -z '*.py' | xargs -0 uv run ruff format --check --force-exclude
+      # The repo's type gate (pre-commit runs the same binary).
+      - run: uv run pyrefly check
+      # pyproject's addopts already excludes e2e / integration. `not databricks`
+      # matches upstream's default lane; that extra is not installed here.
+      - run: >-
+          uv run pytest -q
+          -m "not databricks and not nightly"
+          -n 8 --dist=loadfile --timeout=300
 
   web:
     runs-on: ubuntu-latest
