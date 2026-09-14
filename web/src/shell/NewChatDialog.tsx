@@ -1495,6 +1495,17 @@ export function AgentHarnessPicker({
     const secondaryOrder = ["opencode", "pi"];
     for (const agent of harnessEntries) {
       const selected = agent.id === effectiveAgentId;
+      const native = nativeCodingAgentForAvailableAgent(agent);
+      // Host hello omits harnesses that are not installed. Don't offer those
+      // rows — a missing key is "not advertised", not "unknown but ready".
+      if (
+        !selected &&
+        native != null &&
+        host?.configured_harnesses != null &&
+        !(native.harness in host.configured_harnesses)
+      ) {
+        continue;
+      }
       if (!selected && hideUnconfigured && harnessUnconfiguredOnHost(agent.harness, host)) continue;
       const key = nativeCodingAgentForAvailableAgent(agent)?.iconKind ?? "";
       if (primaryOrder.includes(key)) {

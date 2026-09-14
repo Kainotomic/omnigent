@@ -31,9 +31,6 @@ def _isolate_cli_credentials(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     monkeypatch.setenv("OMNIGENT_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("CURSOR_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("OMNIGENT_DISABLED_HARNESSES", raising=False)
-    monkeypatch.delenv("OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK", raising=False)
-    monkeypatch.delenv("OMNIGENT_DISABLED_HARNESSES", raising=False)
     monkeypatch.delenv("OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK", raising=False)
     for var in ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
         monkeypatch.delenv(var, raising=False)
@@ -328,9 +325,6 @@ def test_configured_harness_map_covers_all_spellings(
         # Native Cursor (``omni cursor``) — gates on the cursor-agent CLI.
         "cursor-native",
         "native-cursor",
-        # Native Kiro (``omni kiro``) — gates on the kiro-cli binary.
-        "kiro-native",
-        "native-kiro",
         # Goose — native TUI (``omni goose``) + headless ACP harness; both gate
         # on the goose CLI.
         "goose",
@@ -415,8 +409,6 @@ def test_configured_harness_map_gates_only_cli_harnesses(
     # binary it reads False before its credential check is even reached.
     for cli in (
         "kimi",
-        "kiro-native",
-        "native-kiro",
         "antigravity-native",
         "native-antigravity",
         "goose-native",
@@ -426,6 +418,9 @@ def test_configured_harness_map_gates_only_cli_harnesses(
         *sorted(ACP_CLI_HARNESSES),
     ):
         assert result[cli] is not True, f"{cli} should be gated on its CLI binary"
+    assert "kiro-native" not in result
+    assert "native-kiro" not in result
+    assert "kiro" not in result
     # Auth-aware harnesses (codex, claude, opencode, cursor, pi) carry a
     # two-step signal in the picker map, so a missing binary is the structured
     # ``"binary-missing"`` (step 1 to-do), not a bare ``False``. Cursor joined
@@ -637,8 +632,6 @@ def test_configured_harness_map_reports_version_too_low_for_outdated_clis(
         "native-opencode",
         "cursor-native",
         "native-cursor",
-        "kiro-native",
-        "native-kiro",
     ):
         assert result[harness] == HARNESS_VERSION_TOO_LOW, (
             f"{harness} should report version-too-low, not binary-missing"
@@ -662,16 +655,20 @@ def test_antigravity_native_requires_credential(
     assert harness_is_configured("native-antigravity") is True
 
 
-def test_disabled_harnesses_env_hides_kiro(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``OMNIGENT_DISABLED_HARNESSES`` reports those spellings unconfigured."""
-    _all_clis_installed(monkeypatch)
-    monkeypatch.setenv("OMNIGENT_DISABLED_HARNESSES", "kiro-native,native-kiro,kiro")
-    assert harness_is_configured("kiro-native") is False
-    assert harness_is_configured("native-kiro") is False
+def test_configured_harness_map_omits_kiro_when_cli_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``kiro-cli`` absent means the host does not advertise kiro-native."""
+    _no_clis_installed(monkeypatch)
     result = configured_harness_map()
-    assert result["kiro-native"] is False
-    assert result["native-kiro"] is False
-    assert harness_is_configured("claude-native") is True
+    assert "kiro-native" not in result
+    assert "native-kiro" not in result
+    assert "kiro" not in result
+    assert "claude-native" in result
+    _all_clis_installed(monkeypatch)
+    advertised = configured_harness_map()
+    assert "kiro-native" in advertised
+    assert "native-kiro" in advertised
 
 
 def test_skip_credential_check_makes_antigravity_ready_without_oauth(

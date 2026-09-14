@@ -141,8 +141,9 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt9 \
    is usable — do not stop the container or `docker run` a second login
    process. A restart after login is optional.
 
-   New Chat hides Kiro (not authorized; `kiro-cli` is removed from the image).
-   Antigravity (`agy`) is selectable. Each user signs in with their own Google
+   The host image does not ship `kiro-cli`; the host hello omits kiro-native
+   when that binary is absent, so New Chat cannot offer Kiro. Antigravity
+   (`agy`) is selectable. Each user signs in with their own Google
    OAuth — there is no `agy login` subcommand and no shared CLIProxy Gemini key:
 
    ```sh

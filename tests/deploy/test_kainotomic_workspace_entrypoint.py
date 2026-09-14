@@ -296,11 +296,11 @@ def test_stale_claude_1m_catalog_is_dropped_when_hash_matches(tmp_path: Path) ->
     assert not stale.exists()
 
 
-def test_apply_host_env_hides_kiro_and_skips_gemini_credential() -> None:
+def test_apply_host_env_skips_gemini_credential() -> None:
     module = _load_entrypoint()
     out = module.apply_host_env({})
     assert out["CLAUDE_CODE_DISABLE_1M_CONTEXT"] == "1"
-    assert "kiro-native" in out["OMNIGENT_DISABLED_HARNESSES"]
+    assert "OMNIGENT_DISABLED_HARNESSES" not in out
     assert out["OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK"] == "gemini"
 
 

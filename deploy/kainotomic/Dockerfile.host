@@ -51,8 +51,9 @@ RUN set -eu; \
     command -v rg >/dev/null; \
     test -x /usr/bin/tini
 
-# Kiro is not authorized on this fleet. Drop the upstream-baked CLI so the host
-# cannot advertise or launch kiro-native. Do not delete the upstream adapter.
+# Kiro is not authorized on this fleet. Remove the upstream-baked CLI so a
+# roll actually drops the package; the host then omits kiro-native from its
+# advertised harness map. Do not delete the upstream adapter.
 RUN rm -f /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat \
       /root/.local/bin/kiro-cli /root/.local/bin/kiro-cli-chat \
  && ! command -v kiro-cli >/dev/null

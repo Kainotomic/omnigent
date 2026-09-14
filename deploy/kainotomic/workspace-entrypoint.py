@@ -1072,7 +1072,6 @@ def apply_host_env(env: dict[str, str]) -> dict[str, str]:
     """Non-secret host-process env for this overlay (picker + Claude 1M pin)."""
     out = dict(env)
     out["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
-    out["OMNIGENT_DISABLED_HARNESSES"] = "kiro-native,native-kiro,kiro"
     out["OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK"] = "gemini"
     return out
 

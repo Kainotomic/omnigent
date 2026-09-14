@@ -2757,7 +2757,58 @@ describe("NewChatLandingScreen", () => {
     expect(screen.queryByTestId("new-chat-landing-agent-a_kiro")).toBeNull();
     fireEvent.click(screen.getByTestId("new-chat-landing-harness-more"));
     const morePi = screen.getByTestId("new-chat-landing-agent-a_pi");
+    const moreKiro = screen.getByTestId("new-chat-landing-agent-a_kiro");
     expect(morePi.querySelector("img")).toHaveClass("size-4", "dark:invert");
+    expect(
+      morePi.compareDocumentPosition(moreKiro) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("omits a native harness the host did not advertise", () => {
+    mockHosts([
+      {
+        ...host("online"),
+        configured_harnesses: {
+          "claude-native": true,
+          "cursor-native": false,
+          "codex-native": true,
+          "antigravity-native": true,
+          "pi-native": true,
+        },
+      } as Host,
+    ]);
+    mockAgents([
+      {
+        id: "a_claude",
+        name: "claude-native-ui",
+        display_name: "Claude Code",
+        description: null,
+        harness: "claude-native",
+        skills: [],
+      },
+      {
+        id: "a_kiro",
+        name: "kiro-native-ui",
+        display_name: "Kiro",
+        description: null,
+        harness: "kiro-native",
+        skills: [],
+      },
+      {
+        id: "a_pi",
+        name: "pi-native-ui",
+        display_name: "Pi",
+        description: null,
+        harness: "pi-native",
+        skills: [],
+      },
+    ]);
+    renderLanding();
+    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-agent-select"), { button: 0 });
+    expect(screen.getByTestId("new-chat-landing-agent-a_claude")).toBeTruthy();
+    expect(screen.queryByTestId("new-chat-landing-agent-a_kiro")).toBeNull();
+    fireEvent.click(screen.getByTestId("new-chat-landing-harness-more"));
+    expect(screen.getByTestId("new-chat-landing-agent-a_pi")).toBeTruthy();
     expect(screen.queryByTestId("new-chat-landing-agent-a_kiro")).toBeNull();
   });
 
