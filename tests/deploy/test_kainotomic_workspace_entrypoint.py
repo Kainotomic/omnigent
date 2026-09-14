@@ -132,3 +132,42 @@ def test_catalog_hash_skip_then_rerender_preserves_user_keys(tmp_path: Path) -> 
 
     assert hash_path.read_text(encoding="utf-8").strip() == module.catalog_digest(catalog_path)
     assert hash_path.read_text(encoding="utf-8").strip() != first_hash
+
+
+_CATALOG_TWO_ANTHROPIC = """\
+{"id":"acme/alpha","family":"anthropic","default":true,"claudeCode":["opus"],"reasoning":true,"input":["text"],"contextWindow":1000,"maxTokens":100}
+{"id":"acme/delta","family":"anthropic","claudeCode":["haiku","subagent"],"reasoning":true,"input":["text"],"contextWindow":1000,"maxTokens":100}
+{"id":"acme/beta","family":"openai","default":true,"opencodeDefault":true,"reasoning":true,"input":["text"],"contextWindow":2000,"maxTokens":200}
+"""
+
+
+def test_claude_managed_settings_allowlists_anthropic_catalog_ids(tmp_path: Path) -> None:
+    """Claude Code's /model picker is independent of the alias env pins.
+
+    Without availableModels it keeps its built-in Anthropic catalog (opus 4.x,
+    bare claude-opus-5, [1m] twins). The overlay must allowlist the anthropic
+    factory IDs — not family aliases, which wildcard every official version.
+    """
+    module = _load_entrypoint()
+    home, _catalog_path = _bind(module, tmp_path, _CATALOG_TWO_ANTHROPIC)
+    module.render_all(_env(home))
+
+    managed = json.loads(module.MANAGED_SETTINGS_PATH.read_text(encoding="utf-8"))
+    assert managed["model"] == "acme/alpha"
+    assert managed["availableModels"] == ["acme/alpha", "acme/delta"]
+    assert managed["enforceAvailableModels"] is True
+    assert managed["modelPicker"] == {
+        "replaceBuiltInOptions": True,
+        "options": [
+            {"model": "acme/alpha", "label": "acme/alpha"},
+            {"model": "acme/delta", "label": "acme/delta"},
+        ],
+    }
+    env = managed["env"]
+    assert env["ANTHROPIC_MODEL"] == "acme/alpha"
+    assert env["ANTHROPIC_DEFAULT_OPUS_MODEL"] == "acme/alpha"
+    assert env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "acme/delta"
+    assert env["CLAUDE_CODE_SUBAGENT_MODEL"] == "acme/delta"
+    assert env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] == "1"
+    assert "ANTHROPIC_DEFAULT_SONNET_MODEL" not in env
+    assert "acme/beta" not in json.dumps(managed)

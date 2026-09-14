@@ -286,12 +286,27 @@ def _yaml_header(text: str) -> str:
 
 
 def claude_settings(skeleton: dict, alloc: Allocation) -> dict:
-    """Claude Code (Anthropic family only): ANTHROPIC_MODEL + alias pins."""
+    """Claude Code anthropic family: default, alias pins, and /model allowlist.
+
+    Alias env vars only remap opus/sonnet/haiku/fable. availableModels plus a
+    replaceBuiltInOptions modelPicker hide the built-in Anthropic catalog;
+    family aliases are omitted so they cannot wildcard official opus 4.x IDs.
+    """
     env = skeleton.setdefault("env", {})
-    env["ANTHROPIC_MODEL"] = alloc.default("anthropic").id
+    default_id = alloc.default("anthropic").id
+    env["ANTHROPIC_MODEL"] = default_id
+    env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
     for model in alloc.family("anthropic"):
         for tier in model.claude_tiers:
             env[CLAUDE_TIER_ENV[tier]] = model.id
+    anthropic_ids = [model.id for model in alloc.family("anthropic")]
+    skeleton["model"] = default_id
+    skeleton["availableModels"] = anthropic_ids
+    skeleton["enforceAvailableModels"] = True
+    skeleton["modelPicker"] = {
+        "replaceBuiltInOptions": True,
+        "options": [{"model": model_id, "label": model_id} for model_id in anthropic_ids],
+    }
     return skeleton
 
 
