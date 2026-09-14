@@ -1288,9 +1288,7 @@ def _family_configured_model_ids(family: FamilyConfig) -> list[str]:
     return ids
 
 
-def _inline_family_wire(
-    family_name: str, family: FamilyConfig
-) -> tuple[str, str, bool] | None:
+def _inline_family_wire(family_name: str, family: FamilyConfig) -> tuple[str, str, bool] | None:
     """Return ``(api, api_key, auth_header)`` when *family* can drive Pi."""
     if not family.base_url:
         return None
@@ -1427,8 +1425,7 @@ def _inline_family_pi_provider(
     }
     leading = (
         [resolved_model]
-        if resolved_model not in configured_elsewhere
-        or resolved_model in configured_on_primary
+        if resolved_model not in configured_elsewhere or resolved_model in configured_on_primary
         else []
     )
     extra_models = _inline_family_model_entries(primary_family, leading)
@@ -1439,9 +1436,9 @@ def _inline_family_pi_provider(
         models = _inline_family_model_entries(family, [])
         if not models:
             continue
-        additional[
-            _PI_OPENAI_PROVIDER_ID if name == "openai" else _PI_PROVIDER_ID
-        ] = _inline_pi_provider_payload(family, fam_api, fam_key, fam_auth, models)
+        additional[_PI_OPENAI_PROVIDER_ID if name == "openai" else _PI_PROVIDER_ID] = (
+            _inline_pi_provider_payload(family, fam_api, fam_key, fam_auth, models)
+        )
     serving = next(
         (
             name
