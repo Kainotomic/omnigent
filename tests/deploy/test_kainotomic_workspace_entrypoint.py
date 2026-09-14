@@ -309,3 +309,16 @@ def test_render_creates_agy_oauth_home(tmp_path: Path) -> None:
     home, _catalog_path = _bind(module, tmp_path, _CATALOG_TWO_ANTHROPIC)
     module.render_all(_env(home))
     assert (home / ".gemini").is_dir()
+
+
+def test_render_removes_leftover_kiro_cli_from_home(tmp_path: Path) -> None:
+    module = _load_entrypoint()
+    home, _catalog_path = _bind(module, tmp_path, _CATALOG_TWO_ANTHROPIC)
+    local_bin = home / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    leftover = local_bin / "kiro-cli"
+    leftover.write_text("stale", encoding="utf-8")
+    (local_bin / "kiro-cli-chat").write_text("stale", encoding="utf-8")
+    module.render_all(_env(home))
+    assert not leftover.exists()
+    assert not (local_bin / "kiro-cli-chat").exists()

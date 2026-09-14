@@ -882,6 +882,7 @@ def render_all(env: dict[str, str]) -> None:
     force = env.get("OMNIGENT_GATEWAY_FORCE", "").strip().lower() in ("1", "true", "yes")
     home = Path(env.get("HOME") or "/root")
     ensure_agy_home(home)
+    remove_volume_kiro_cli(home)
     config_home = Path(env.get("OMNIGENT_CONFIG_HOME", "").strip() or home / ".omnigent")
     digest = catalog_digest()
     stored = read_catalog_hash(catalog_hash_path(config_home))
@@ -1079,6 +1080,18 @@ def apply_host_env(env: dict[str, str]) -> dict[str, str]:
 def ensure_agy_home(home: Path) -> None:
     """Keep per-user agy OAuth on the persistent workspace home volume."""
     (home / ".gemini").mkdir(mode=0o700, parents=True, exist_ok=True)
+
+
+def remove_volume_kiro_cli(home: Path) -> None:
+    """Drop leftover kiro-cli from a persistent home that predates the image rm."""
+    local_bin = home / ".local" / "bin"
+    for name in ("kiro-cli", "kiro-cli-chat"):
+        path = local_bin / name
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        log(f"removed leftover {path}")
 
 
 def main(argv: list[str]) -> None:
