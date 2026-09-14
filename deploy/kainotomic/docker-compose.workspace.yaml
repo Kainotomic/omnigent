@@ -18,7 +18,7 @@
 
 services:
   egress:
-    image: ghcr.io/kainotomic/omnigent-host@sha256:0549bad9f3c54be1d6b36cca8573d81b528d57ab9958a8686c5ddaf2212d53b8
+    image: ghcr.io/kainotomic/omnigent-host@sha256:d8d67a58fd7dd1d00dfe66e45ab9fd1154a01e830248bc66674d8d1f9afb40e3
     platform: linux/amd64
     restart: unless-stopped
     # Legacy ran `nft ... && exec sleep infinity` with the kainogent-host image;
@@ -50,7 +50,7 @@ services:
       retries: 6
 
   host:
-    image: ghcr.io/kainotomic/omnigent-host@sha256:0549bad9f3c54be1d6b36cca8573d81b528d57ab9958a8686c5ddaf2212d53b8
+    image: ghcr.io/kainotomic/omnigent-host@sha256:d8d67a58fd7dd1d00dfe66e45ab9fd1154a01e830248bc66674d8d1f9afb40e3
     platform: linux/amd64
     restart: unless-stopped
     network_mode: service:egress

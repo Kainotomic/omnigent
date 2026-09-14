@@ -11,7 +11,7 @@ unmodified, the workspace image is upstream's `host` target plus this overlay.
 docker build -f deploy/docker/Dockerfile --target runtime -t omnigent-server:b203ba4c .
 docker build -f deploy/docker/Dockerfile --target host \
     --build-arg EXTRA_HARNESS_CLIS=opencode@1.18.30 -t omnigent-host-base:b203ba4c .
-docker build -f deploy/kainotomic/Dockerfile.host -t omnigent-host:b203ba4c-kt6 .
+docker build -f deploy/kainotomic/Dockerfile.host -t omnigent-host:b203ba4c-kt7 .
 ```
 
 `Dockerfile.host` pins `@anthropic-ai/claude-code`, `@openai/codex`,
@@ -102,7 +102,7 @@ whenever the gateway's inventory changes.
 Dry run without a server:
 
 ```sh
-docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt6 \
+docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt7 \
     sh -c 'cat /etc/claude-code/managed-settings.json ~/.codex/config.toml'
 ```
 
@@ -123,7 +123,7 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt6 \
 2. Workspaces: project *Kainogent Workspaces*, one raw compose per user from
    `docker-compose.workspace.yaml` with that user's `OMNIGENT_SERVER_URL` and
    `OMNIGENT_GATEWAY_API_KEY`; the host image is pinned by digest (published tag
-   `kainotomic-v0.14.0-kt6`). The `egress` sidecar rejects traffic to `OMNIGENT_EGRESS_DENY_IP`
+   `kainotomic-v0.14.0-kt7`). The `egress` sidecar rejects traffic to `OMNIGENT_EGRESS_DENY_IP`
    (dokploy-root) exactly like the legacy `nft` script. After the first start
    the host stays up waiting for login (no crash-loop). Enroll with:
 
