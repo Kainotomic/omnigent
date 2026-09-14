@@ -2727,30 +2727,38 @@ describe("NewChatLandingScreen", () => {
         harness: "claude-sdk",
         skills: [],
       },
+      {
+        id: "a_agy",
+        name: "antigravity-native-ui",
+        display_name: "Antigravity",
+        description: null,
+        harness: "antigravity-native",
+        skills: [],
+      },
     ]);
     renderLanding();
     fireEvent.pointerDown(screen.getByTestId("new-chat-landing-agent-select"), { button: 0 });
     const claude = screen.getByTestId("new-chat-landing-agent-a_claude");
     const cursor = screen.getByTestId("new-chat-landing-agent-a_cursor");
     const codex = screen.getByTestId("new-chat-landing-agent-a_codex");
+    const antigravity = screen.getByTestId("new-chat-landing-agent-a_agy");
     const polly = screen.getByTestId("new-chat-landing-agent-a_polly");
     expect(claude.compareDocumentPosition(cursor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cursor.compareDocumentPosition(codex) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      codex.compareDocumentPosition(antigravity) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(cursor.querySelector("img")).toHaveClass("size-4", "dark:invert");
     expect(decodeURIComponent(codex.querySelector("img")?.getAttribute("src") ?? "")).toContain(
       "#B1A7FF",
     );
     expect(codex.compareDocumentPosition(polly) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    for (const id of ["a_pi", "a_kiro"]) {
-      expect(screen.queryByTestId(`new-chat-landing-agent-${id}`)).toBeNull();
-    }
+    expect(screen.queryByTestId("new-chat-landing-agent-a_pi")).toBeNull();
+    expect(screen.queryByTestId("new-chat-landing-agent-a_kiro")).toBeNull();
     fireEvent.click(screen.getByTestId("new-chat-landing-harness-more"));
     const morePi = screen.getByTestId("new-chat-landing-agent-a_pi");
-    const moreKiro = screen.getByTestId("new-chat-landing-agent-a_kiro");
     expect(morePi.querySelector("img")).toHaveClass("size-4", "dark:invert");
-    expect(
-      morePi.compareDocumentPosition(moreKiro) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByTestId("new-chat-landing-agent-a_kiro")).toBeNull();
   });
 
   it("keeps the selected secondary harness in Other", () => {

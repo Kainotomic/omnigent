@@ -141,6 +141,20 @@ docker run --rm -e OMNIGENT_GATEWAY_API_KEY=dummy omnigent-host:b203ba4c-kt8 \
    is usable — do not stop the container or `docker run` a second login
    process. A restart after login is optional.
 
+   New Chat hides Kiro (not authorized; `kiro-cli` is removed from the image).
+   Antigravity (`agy`) is selectable. Each user signs in with their own Google
+   OAuth — there is no `agy login` subcommand and no shared CLIProxy Gemini key:
+
+   ```sh
+   docker exec -it omnigent-kt-ws-<slug>-host-1 agy
+   ```
+
+   Follow the printed Google sign-in. The token is written under `~/.gemini`
+   on that workspace's `home` volume (`oauth_creds.json` or
+   `antigravity-cli/antigravity-oauth-token`). Verify with `agy models` (exits 0
+   when signed in; do not print the token). You can also start Antigravity from
+   New Chat and complete the same browser sign-in in the session TUI.
+
    `host` shares `egress`'s network namespace. The `host` healthcheck passes
    when `omnigent host` is running and `curl "$OMNIGENT_SERVER_URL/health"`
    succeeds, **or** when the entrypoint is still waiting for login

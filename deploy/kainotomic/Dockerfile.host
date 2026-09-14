@@ -51,6 +51,12 @@ RUN set -eu; \
     command -v rg >/dev/null; \
     test -x /usr/bin/tini
 
+# Kiro is not authorized on this fleet. Drop the upstream-baked CLI so the host
+# cannot advertise or launch kiro-native. Do not delete the upstream adapter.
+RUN rm -f /usr/local/bin/kiro-cli /usr/local/bin/kiro-cli-chat \
+      /root/.local/bin/kiro-cli /root/.local/bin/kiro-cli-chat \
+ && ! command -v kiro-cli >/dev/null
+
 # Secret-free harness config templates + model catalog (gateway-models.jsonl)
 # + the entrypoint that renders them from OMNIGENT_GATEWAY_* env at container
 # start (see README.md in this directory).

@@ -80,6 +80,15 @@ _SDK_HARNESSES: frozenset[str] = frozenset(
     {"claude-sdk", "openai-agents", "openai-agents-sdk", "antigravity"}
 )
 
+# Optional overlay: comma-separated harness ids the host must not advertise
+# (``OMNIGENT_DISABLED_HARNESSES=kiro-native,native-kiro``). Empty by default so
+# upstream installs keep every baked CLI visible.
+_DISABLED_HARNESSES_ENV = "OMNIGENT_DISABLED_HARNESSES"
+# Optional overlay: skip the file/OAuth credential half of readiness for these
+# install keys (``OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK=gemini``). The binary
+# gate still applies. Empty by default.
+_SKIP_CREDENTIAL_CHECK_ENV = "OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK"
+
 # Families/harnesses whose CLIs authenticate via file-based credentials rather
 # than a CLI login-status command. For these, ``harness_is_configured`` checks
 # BOTH the binary (via ``harness_cli_installed``) AND the credential (via the
@@ -153,6 +162,20 @@ _HERMES_NATIVE_HARNESSES: frozenset[str] = frozenset({"hermes-native", "native-h
 _QWEN_HARNESSES: frozenset[str] = frozenset({QWEN_KEY, "qwen-code", "qwen-native", "native-qwen"})
 
 
+def _csv_env(name: str) -> frozenset[str]:
+    raw = os.environ.get(name, "")
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
+def _disabled_canonical_harnesses() -> frozenset[str]:
+    return frozenset(_canonical_harness(part) for part in _csv_env(_DISABLED_HARNESSES_ENV))
+
+
+def _skip_credential_for(install_key: str) -> bool:
+    skipped = _csv_env(_SKIP_CREDENTIAL_CHECK_ENV)
+    return install_key in skipped
+
+
 def _canonical_harness(harness: str) -> str:
     """Normalize a harness id to its canonical spelling.
 
@@ -207,6 +230,8 @@ def _harness_availability_core(harness: str) -> HarnessAvailability:
         ``False`` or a reason string otherwise.
     """
     canonical = _canonical_harness(harness)
+    if canonical in _disabled_canonical_harnesses():
+        return False
     if canonical == "acp":
         # The generic ACP harness has no fixed binary — "configured" means at
         # least one agent is registered in the ``acp:`` config block. Each
@@ -295,7 +320,7 @@ def _harness_availability_core(harness: str) -> HarnessAvailability:
     if availability is not True:
         return availability
     credential_check = _FAMILY_CREDENTIAL_CHECK.get(install_key)
-    if credential_check is not None:
+    if credential_check is not None and not _skip_credential_for(install_key):
         return credential_check()
     return True
 
@@ -459,6 +484,8 @@ def _cli_family_availability(canonical: str, install_key: str) -> HarnessAvailab
 
 def _harness_availability(canonical: str) -> HarnessAvailability:
     """Return picker-facing availability for one canonical harness spelling."""
+    if canonical in _disabled_canonical_harnesses():
+        return False
     if _is_codex_family_harness(canonical):
         from omnigent.harnesses.codex_native.main import _codex_auth_unavailable_reason
 

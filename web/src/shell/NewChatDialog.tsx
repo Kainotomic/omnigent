@@ -1491,7 +1491,7 @@ export function AgentHarnessPicker({
   const { readyHarnessEntries, moreHarnessEntries } = useMemo(() => {
     const ready: AvailableAgent[] = [];
     const more: AvailableAgent[] = [];
-    const primaryOrder = ["claude", "cursor", "codex"];
+    const primaryOrder = ["claude", "cursor", "codex", "antigravity"];
     const secondaryOrder = ["opencode", "pi"];
     for (const agent of harnessEntries) {
       const selected = agent.id === effectiveAgentId;

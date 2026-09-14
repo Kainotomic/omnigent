@@ -31,6 +31,10 @@ def _isolate_cli_credentials(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     monkeypatch.setenv("OMNIGENT_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("CURSOR_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("OMNIGENT_DISABLED_HARNESSES", raising=False)
+    monkeypatch.delenv("OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK", raising=False)
+    monkeypatch.delenv("OMNIGENT_DISABLED_HARNESSES", raising=False)
+    monkeypatch.delenv("OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK", raising=False)
     for var in ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
         monkeypatch.delenv(var, raising=False)
     # Copilot also accepts a ``gh auth login`` session as a token, so a developer's
@@ -656,6 +660,31 @@ def test_antigravity_native_requires_credential(
     monkeypatch.setattr(_ga, "gemini_login_detected", lambda: True)
     assert harness_is_configured("antigravity-native") is True
     assert harness_is_configured("native-antigravity") is True
+
+
+def test_disabled_harnesses_env_hides_kiro(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``OMNIGENT_DISABLED_HARNESSES`` reports those spellings unconfigured."""
+    _all_clis_installed(monkeypatch)
+    monkeypatch.setenv("OMNIGENT_DISABLED_HARNESSES", "kiro-native,native-kiro,kiro")
+    assert harness_is_configured("kiro-native") is False
+    assert harness_is_configured("native-kiro") is False
+    result = configured_harness_map()
+    assert result["kiro-native"] is False
+    assert result["native-kiro"] is False
+    assert harness_is_configured("claude-native") is True
+
+
+def test_skip_credential_check_makes_antigravity_ready_without_oauth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Overlay can advertise antigravity-native from the ``agy`` binary alone."""
+    import omnigent.onboarding.gemini_auth as _ga
+
+    _all_clis_installed(monkeypatch)
+    monkeypatch.setattr(_ga, "gemini_login_detected", lambda: False)
+    monkeypatch.setenv("OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK", "gemini")
+    assert harness_is_configured("antigravity-native") is True
+    assert configured_harness_map()["antigravity-native"] is True
 
 
 def test_claude_ready_via_managed_gateway_without_provider_or_cli_login(

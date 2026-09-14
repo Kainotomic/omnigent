@@ -881,6 +881,7 @@ def render_all(env: dict[str, str]) -> None:
     values["OPENCODE_MODEL"] = alloc.opencode_default().id
     force = env.get("OMNIGENT_GATEWAY_FORCE", "").strip().lower() in ("1", "true", "yes")
     home = Path(env.get("HOME") or "/root")
+    ensure_agy_home(home)
     config_home = Path(env.get("OMNIGENT_CONFIG_HOME", "").strip() or home / ".omnigent")
     digest = catalog_digest()
     stored = read_catalog_hash(catalog_hash_path(config_home))
@@ -1067,9 +1068,22 @@ def wait_for_login(env: dict[str, str], server_url: str) -> None:
         time.sleep(_WAIT_POLL_INTERVAL_S)
 
 
+def apply_host_env(env: dict[str, str]) -> dict[str, str]:
+    """Non-secret host-process env for this overlay (picker + Claude 1M pin)."""
+    out = dict(env)
+    out["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
+    out["OMNIGENT_DISABLED_HARNESSES"] = "kiro-native,native-kiro,kiro"
+    out["OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK"] = "gemini"
+    return out
+
+
+def ensure_agy_home(home: Path) -> None:
+    """Keep per-user agy OAuth on the persistent workspace home volume."""
+    (home / ".gemini").mkdir(mode=0o700, parents=True, exist_ok=True)
+
+
 def main(argv: list[str]) -> None:
-    env = dict(os.environ)
-    env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] = "1"
+    env = apply_host_env(os.environ)
     render_all(env)
     if argv:
         cmd = argv

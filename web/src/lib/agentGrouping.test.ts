@@ -27,6 +27,7 @@ describe("selectableSessionAgents", () => {
       agent({ name: "nessie" }),
       agent({ name: "kimi" }),
       agent({ name: "kimi-code" }),
+      agent({ name: "kiro-native-ui" }),
     ]);
     expect(result.map((a) => a.name)).toEqual(["hello"]);
   });

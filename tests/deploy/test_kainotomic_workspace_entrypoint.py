@@ -294,3 +294,18 @@ def test_stale_claude_1m_catalog_is_dropped_when_hash_matches(tmp_path: Path) ->
     module.render_all(_env(home))
 
     assert not stale.exists()
+
+
+def test_apply_host_env_hides_kiro_and_skips_gemini_credential() -> None:
+    module = _load_entrypoint()
+    out = module.apply_host_env({})
+    assert out["CLAUDE_CODE_DISABLE_1M_CONTEXT"] == "1"
+    assert "kiro-native" in out["OMNIGENT_DISABLED_HARNESSES"]
+    assert out["OMNIGENT_HARNESS_SKIP_CREDENTIAL_CHECK"] == "gemini"
+
+
+def test_render_creates_agy_oauth_home(tmp_path: Path) -> None:
+    module = _load_entrypoint()
+    home, _catalog_path = _bind(module, tmp_path, _CATALOG_TWO_ANTHROPIC)
+    module.render_all(_env(home))
+    assert (home / ".gemini").is_dir()
