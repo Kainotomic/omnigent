@@ -32,6 +32,8 @@ def _load_entrypoint():
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
+    # Tests must not shell out to a developer-installed Codex CLI.
+    module._bundled_codex_catalog = lambda: None
     return module
 
 
@@ -76,6 +78,9 @@ def test_catalog_hash_skip_then_rerender_preserves_user_keys(tmp_path: Path) -> 
     opencode = json.loads(opencode_path.read_text(encoding="utf-8"))
     assert opencode["model"] == "cliproxy/acme/beta"
     assert "acme/beta" in opencode["provider"]["cliproxy"]["models"]
+    first_codex = json.loads((home / ".codex" / "model_catalog.json").read_text(encoding="utf-8"))
+    assert [entry["slug"] for entry in first_codex["models"]] == ["acme/beta"]
+    assert "model_catalog_json =" in (home / ".codex" / "config.toml").read_text(encoding="utf-8")
     opencode["plugin"] = ["user-plugin"]
     opencode["provider"]["extra"] = {"name": "keep-me"}
     opencode_path.write_text(json.dumps(opencode, indent=2) + "\n", encoding="utf-8")
@@ -130,6 +135,12 @@ def test_catalog_hash_skip_then_rerender_preserves_user_keys(tmp_path: Path) -> 
     assert omni_updated["host_id"] == "stable-identity"
     assert omni_updated["providers"]["cliproxy"]["openai"]["models"]["default"] == "acme/gamma"
 
+    updated_codex = json.loads(
+        (home / ".codex" / "model_catalog.json").read_text(encoding="utf-8")
+    )
+    assert [entry["slug"] for entry in updated_codex["models"]] == ["acme/gamma"]
+    assert "model_catalog_json =" in (home / ".codex" / "config.toml").read_text(encoding="utf-8")
+
     assert hash_path.read_text(encoding="utf-8").strip() == module.catalog_digest(catalog_path)
     assert hash_path.read_text(encoding="utf-8").strip() != first_hash
 
@@ -171,3 +182,89 @@ def test_claude_managed_settings_allowlists_anthropic_catalog_ids(tmp_path: Path
     assert env["CLAUDE_CODE_DISABLE_1M_CONTEXT"] == "1"
     assert "ANTHROPIC_DEFAULT_SONNET_MODEL" not in env
     assert "acme/beta" not in json.dumps(managed)
+
+
+_CATALOG_CODEX_PIN = """\
+{"id":"acme/alpha","family":"anthropic","default":true,"claudeCode":["opus"],"reasoning":true,"input":["text"],"contextWindow":1000,"maxTokens":100}
+{"id":"acme/terra","family":"openai","default":true,"opencodeDefault":true,"reasoning":true,"input":["text"],"contextWindow":2000,"maxTokens":200}
+{"id":"acme/sol","family":"openai","codexProfile":"sol","reasoning":true,"input":["text"],"contextWindow":2000,"maxTokens":200}
+{"id":"acme/luna","family":"openai","codexProfile":"luna","reasoning":true,"input":["text"],"contextWindow":2000,"maxTokens":200}
+{"id":"acme/glm","family":"openai","reasoning":true,"input":["text"],"contextWindow":2000,"maxTokens":200}
+"""
+
+
+def test_codex_catalog_allowlists_default_and_profile_ids(tmp_path: Path) -> None:
+    """Codex's picker is the openai default plus codexProfile rows only.
+
+    Other openai-family ids stay in Pi/OpenCode. Without model_catalog_json
+    Codex would list its built-ins plus every cliproxy /v1/models row.
+    """
+    module = _load_entrypoint()
+    home, _catalog_path = _bind(module, tmp_path, _CATALOG_CODEX_PIN)
+    cache = home / ".omnigent" / "cache" / "model-catalogs"
+    cache.mkdir(parents=True)
+    stale = cache / "codex-native-stale.json"
+    stale.write_text('{"models":[{"id":"stale"}]}\n', encoding="utf-8")
+    module.render_all(_env(home))
+
+    catalog = json.loads((home / ".codex" / "model_catalog.json").read_text(encoding="utf-8"))
+    assert [entry["slug"] for entry in catalog["models"]] == [
+        "acme/terra",
+        "acme/sol",
+        "acme/luna",
+    ]
+    assert all(entry["visibility"] == "list" for entry in catalog["models"])
+    config = (home / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert 'model = "acme/terra"' in config
+    assert "model_catalog_json" in config
+    assert str((home / ".codex" / "model_catalog.json").resolve()) in config
+    assert (home / ".codex" / "sol.config.toml").is_file()
+    assert (home / ".codex" / "luna.config.toml").is_file()
+    assert not stale.exists()
+
+    hash_path = home / ".omnigent" / ".kainotomic-catalog-hash"
+    first_hash = hash_path.read_text(encoding="utf-8").strip()
+    catalog_path = home / ".codex" / "model_catalog.json"
+    catalog_path.write_text('{"models":[{"slug":"user-edit"}]}\n', encoding="utf-8")
+    module.render_all(_env(home))
+    skipped = json.loads(catalog_path.read_text(encoding="utf-8"))
+    assert skipped == {"models": [{"slug": "user-edit"}]}
+    assert hash_path.read_text(encoding="utf-8").strip() == first_hash
+
+
+def test_codex_catalog_pin_lands_on_existing_home_without_hash_change(
+    tmp_path: Path,
+) -> None:
+    """kt7 homes already have a matching catalog hash and no Codex pin.
+
+    The next start must write model_catalog.json and the config pointer
+    without waiting for gateway-models.jsonl to change.
+    """
+    module = _load_entrypoint()
+    home, _catalog_path = _bind(module, tmp_path, _CATALOG_CODEX_PIN)
+    module.render_all(_env(home))
+
+    config = home / ".codex" / "config.toml"
+    catalog = home / ".codex" / "model_catalog.json"
+    lines = [
+        line
+        for line in config.read_text(encoding="utf-8").splitlines()
+        if not line.startswith("model_catalog_json")
+    ]
+    config.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    catalog.unlink()
+    cache = home / ".omnigent" / "cache" / "model-catalogs"
+    cache.mkdir(parents=True)
+    stale = cache / "codex-native-old.json"
+    stale.write_text('{"models":[{"id":"old"}]}\n', encoding="utf-8")
+
+    module.render_all(_env(home))
+
+    restored = json.loads(catalog.read_text(encoding="utf-8"))
+    assert [entry["slug"] for entry in restored["models"]] == [
+        "acme/terra",
+        "acme/sol",
+        "acme/luna",
+    ]
+    assert "model_catalog_json" in config.read_text(encoding="utf-8")
+    assert not stale.exists()

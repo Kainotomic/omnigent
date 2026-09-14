@@ -941,12 +941,20 @@ def _populate_codex_home_config(
         if minimal_config and filename == "config.toml":
             import tomlkit
 
-            # The title worker needs custom-provider routing, but copying the
-            # full user config also starts unrelated MCPs/plugins and can exceed
-            # its timeout. auth.json alone cannot supply these provider tables.
+            # Provider routing plus the optional catalog pin. model_catalog_json
+            # REPLACES Codex's bundled catalog; without it a custom provider
+            # still appends GET /v1/models onto the built-ins. The New Chat
+            # probe uses this minimal copy, so dropping the pin would show
+            # every discovered slug even when ~/.codex already pinned a set.
             source_config = tomlkit.parse(source_file.read_text())
             minimal_document = tomlkit.document()
-            for key in ("model_provider", "model_providers", "profiles"):
+            for key in (
+                "model",
+                "model_catalog_json",
+                "model_provider",
+                "model_providers",
+                "profiles",
+            ):
                 if key in source_config:
                     minimal_document[key] = source_config[key]
             dest_path.write_text(tomlkit.dumps(minimal_document))

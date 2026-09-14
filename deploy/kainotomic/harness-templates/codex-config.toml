@@ -9,8 +9,12 @@
 # profile files next to this one — ~/.codex/<codexProfile>.config.toml,
 # selected with `codex --profile <name>` (the legacy [profiles.*] tables are
 # parsed but no longer applied by codex 0.154.0; see the codex-rs loader).
+# model_catalog_json REPLACES the bundled catalog so New Chat / model/list
+# shows only the openai default plus every codexProfile row (see
+# workspace-entrypoint), not Codex built-ins or other cliproxy families.
 model = "${OPENAI_MODEL}"
 model_provider = "cliproxy"
+model_catalog_json = "${CODEX_MODEL_CATALOG_JSON}"
 ${CODEX_MODEL_LIMITS}
 
 [model_providers.cliproxy]

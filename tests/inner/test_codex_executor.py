@@ -2990,6 +2990,8 @@ def test_populate_codex_home_config_minimal_mode_keeps_only_provider_routing(
     (source / "auth.json").write_text('{"auth_mode": "chatgpt"}')
     (source / "AGENTS.md").write_text("global guidance")
     (source / "config.toml").write_text(
+        'model = "acme/default"\n'
+        'model_catalog_json = "/tmp/catalog.json"\n'
         'model_provider = "Databricks"\n'
         '[model_providers.Databricks]\nname = "Databricks"\nbase_url = "https://example"\n'
         "[plugins.example]\nenabled = true\n"
@@ -3005,6 +3007,8 @@ def test_populate_codex_home_config_minimal_mode_keeps_only_provider_routing(
     assert (target / "auth.json").is_symlink()
     assert not (target / "AGENTS.md").exists()
     config_text = (target / "config.toml").read_text()
+    assert 'model = "acme/default"' in config_text
+    assert 'model_catalog_json = "/tmp/catalog.json"' in config_text
     assert 'model_provider = "Databricks"' in config_text
     assert "[model_providers.Databricks]" in config_text
     assert "plugins" not in config_text

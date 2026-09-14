@@ -56,7 +56,7 @@ Add or re-tier a model there, rebuild, and every harness picks it up:
 | Harness | What it gets from the catalog |
 |---|---|
 | Claude Code (`/etc/claude-code/managed-settings.json`) | anthropic family only: `model` + `ANTHROPIC_MODEL` = anthropic default; `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL` and `CLAUDE_CODE_SUBAGENT_MODEL` from `claudeCode` tiers (`haiku` is the current name for the small/fast slot; `ANTHROPIC_SMALL_FAST_MODEL` is deprecated); `availableModels` + `modelPicker.replaceBuiltInOptions` + `enforceAvailableModels` pin `/model` to those factory IDs (not Claude Code's built-in opus 4.x / `[1m]` catalog); `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` drops the 1M twins |
-| Codex (`~/.codex/config.toml` + `~/.codex/<codexProfile>.config.toml`) | openai default as `model` (+ `model_context_window`), `wire_api = "responses"`; one profile file per `codexProfile` model, selected with `codex --profile <name>` (codex 0.154.0 layers `$CODEX_HOME/<name>.config.toml` over `config.toml`; the legacy `[profiles.*]` tables are no longer applied) |
+| Codex (`~/.codex/config.toml` + `~/.codex/model_catalog.json` + `~/.codex/<codexProfile>.config.toml`) | openai default as `model` (+ `model_context_window`), `wire_api = "responses"`; `model_catalog_json` replaces Codex's bundled catalog with the openai default plus every `codexProfile` row so New Chat / `model/list` does not show built-ins or other cliproxy families; one profile file per `codexProfile` model, selected with `codex --profile <name>` (codex 0.154.0 layers `$CODEX_HOME/<name>.config.toml` over `config.toml`; the legacy `[profiles.*]` tables are no longer applied) |
 | Pi (`~/.pi/agent/models.json`, `settings.json`) | all models under one `cliproxy` provider, `api: openai-responses`, with `contextWindow`/`maxTokens`/`thinkingLevelMap`/`input`; default = anthropic default |
 | OpenCode (`~/.config/opencode/opencode.json`) | all models under `provider.cliproxy` (`@ai-sdk/openai-compatible`) with `limit.context`/`limit.output`, `reasoning`, `attachment`, `modalities`; `model = cliproxy/<opencodeDefault>` |
 | Omnigent (`~/.omnigent/config.yaml`) | `providers.cliproxy.anthropic.models` = default + tiers, `openai.models` = default + the remaining models, `context_window`/`max_output_tokens` of each default |
@@ -72,6 +72,10 @@ skips those files. `OMNIGENT_GATEWAY_FORCE=1` still overwrites.
 
 Rendered files (created when absent; catalog-hash updates the model bits):
 
+- `~/.codex/model_catalog.json` — Codex picker allowlist (openai default +
+  `codexProfile` ids). Written on first boot or catalog-hash change; a
+  matching hash skips it. The host probe copies `model` +
+  `model_catalog_json` into its isolated `CODEX_HOME`.
 - `~/.omnigent/config.yaml` — Omnigent's own `providers.cliproxy` (`kind:
   gateway`, `anthropic` + `openai` families, `api_key_ref:
   env:OMNIGENT_GATEWAY_API_KEY`, `default: [anthropic, openai, pi]`). This is

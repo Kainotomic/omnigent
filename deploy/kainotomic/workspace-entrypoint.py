@@ -30,7 +30,9 @@ the gateway scalars, then the model blocks are injected structurally):
   ~/.omnigent/config.yaml                  create if absent; catalog-hash or FORCE
                                            updates providers.cliproxy catalog fields
   ~/.codex/config.toml                     create if absent; catalog-hash updates
-                                           model + model_context_window
+                                           model + model_context_window + model_catalog_json
+  ~/.codex/model_catalog.json              openai default + codexProfile rows; catalog-hash
+                                           or first-boot writes it (Codex model/list pin)
   ~/.codex/<codexProfile>.config.toml      create/update on catalog-hash; `codex --profile <name>`
   ~/.config/opencode/opencode.json         create if absent; catalog-hash updates
                                            model + provider.cliproxy.models
@@ -62,13 +64,18 @@ ANTHROPIC_BASE_URL are exported; OPENAI_API_KEY is never set.
 
 from __future__ import annotations
 
+import contextlib
+import copy
 import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import string
+import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -334,6 +341,152 @@ def codex_profile_files(alloc: Allocation) -> dict[str, str]:
     return files
 
 
+def codex_picker_models(alloc: Allocation) -> list[GatewayModel]:
+    """OpenAI default plus every codexProfile model, catalog order.
+
+    This is the New Chat / model-options allowlist. Other openai-family
+    rows stay in Pi/OpenCode; they must not appear in Codex's picker.
+    """
+    seen: set[str] = set()
+    out: list[GatewayModel] = []
+    default = alloc.default("openai")
+    out.append(default)
+    seen.add(default.id)
+    for model in alloc.family("openai"):
+        if model.codex_profile and model.id not in seen:
+            out.append(model)
+            seen.add(model.id)
+    return out
+
+
+def _bundled_codex_catalog() -> dict | None:
+    """Compiled-in Codex catalog, probed from an empty CODEX_HOME.
+
+    An empty home has no cliproxy provider, so GET /v1/models is not
+    consulted. Used only as clone-source metadata; picker slugs come
+    from gateway-models.jsonl.
+    """
+    codex = shutil.which("codex")
+    if not codex:
+        return None
+    try:
+        with tempfile.TemporaryDirectory(prefix="kt-codex-bundled-") as tmp:
+            completed = subprocess.run(
+                [codex, "debug", "models"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                env={**os.environ, "CODEX_HOME": tmp},
+                check=False,
+            )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log(f"warning: could not probe Codex bundled catalog ({exc})")
+        return None
+    if completed.returncode != 0:
+        log("warning: codex debug models failed; writing a fallback catalog")
+        return None
+    try:
+        catalog = json.loads(completed.stdout)
+    except ValueError:
+        log("warning: codex debug models returned non-JSON; writing a fallback catalog")
+        return None
+    models = catalog.get("models") if isinstance(catalog, dict) else None
+    if not isinstance(models, list) or not models:
+        return None
+    return catalog
+
+
+def _fallback_catalog_entry(model: GatewayModel, *, priority: int) -> dict:
+    """Minimal ModelInfo Codex 0.154.0 accepts when a bundled clone is unavailable."""
+    entry: dict[str, object] = {
+        "slug": model.id,
+        "display_name": model.id,
+        "description": None,
+        "visibility": "list",
+        "supported_in_api": True,
+        "priority": priority,
+        "supported_reasoning_levels": [
+            {"effort": "low", "description": "Low"},
+            {"effort": "medium", "description": "Medium"},
+            {"effort": "high", "description": "High"},
+            {"effort": "xhigh", "description": "Extra high"},
+        ],
+        "default_reasoning_level": "medium",
+        "shell_type": "unified_exec",
+        "upgrade": None,
+        "availability_nux": None,
+        "model_messages": None,
+        "default_reasoning_summary": "auto",
+        "support_verbosity": False,
+        "default_verbosity": None,
+        "apply_patch_tool_type": None,
+        "truncation_policy": {"mode": "bytes", "limit": 10000},
+        "supports_image_detail_original": False,
+        "experimental_supported_tools": [],
+        "base_instructions": "You are Codex, a coding agent.",
+    }
+    if model.context_window is not None:
+        entry["context_window"] = model.context_window
+        entry["max_context_window"] = model.context_window
+    return entry
+
+
+def _clone_source_for(
+    models: list[dict], model: GatewayModel, default: GatewayModel
+) -> dict | None:
+    """Closest bundled row to clone: matching short id, else the default's twin."""
+    wanted = (model.short_id, default.short_id)
+    for needle in wanted:
+        for entry in models:
+            slug = entry.get("slug")
+            if isinstance(slug, str) and slug.rsplit("/", 1)[-1] == needle:
+                return entry
+    return next((entry for entry in models if isinstance(entry.get("slug"), str)), None)
+
+
+def _clone_catalog_entry(source: dict, model: GatewayModel, *, priority: int) -> dict:
+    entry = copy.deepcopy(source)
+    entry["slug"] = model.id
+    entry["display_name"] = model.id
+    entry["visibility"] = "list"
+    entry["priority"] = priority
+    entry["upgrade"] = None
+    entry["availability_nux"] = None
+    if model.context_window is not None:
+        entry["context_window"] = model.context_window
+        entry["max_context_window"] = model.context_window
+    return entry
+
+
+def codex_model_catalog(alloc: Allocation) -> dict:
+    """``{"models": [...]}`` for model_catalog_json: picker ids only."""
+    picker = codex_picker_models(alloc)
+    bundled = _bundled_codex_catalog()
+    bundled_models = bundled.get("models") if isinstance(bundled, dict) else None
+    sources = bundled_models if isinstance(bundled_models, list) else []
+    default = alloc.default("openai")
+    models: list[dict] = []
+    for priority, model in enumerate(picker):
+        source = _clone_source_for(sources, model, default) if sources else None
+        if source is None:
+            models.append(_fallback_catalog_entry(model, priority=priority))
+        else:
+            models.append(_clone_catalog_entry(source, model, priority=priority))
+    return {"models": models}
+
+
+def invalidate_codex_model_caches(config_home: Path) -> None:
+    """Drop Omnigent's stored Codex probe so the next host start re-lists."""
+    catalogs = config_home / "cache" / "model-catalogs"
+    if catalogs.is_dir():
+        for path in catalogs.glob("codex-native-*.json"):
+            with contextlib.suppress(OSError):
+                path.unlink()
+    probe = config_home / "cache" / "codex-model-probe"
+    if probe.is_dir():
+        shutil.rmtree(probe, ignore_errors=True)
+
+
 def opencode_models(alloc: Allocation) -> dict[str, dict]:
     """OpenCode provider.<id>.models (opencode.ai/config.json Model schema)."""
     out: dict[str, dict] = {}
@@ -517,7 +670,7 @@ def merge_pi_settings(target: Path, rendered: str) -> None:
 
 
 def merge_codex_config(target: Path, rendered: str) -> None:
-    """Replace root model + context window; keep other TOML tables."""
+    """Replace root model, limits, and catalog pin; keep other TOML tables."""
     try:
         new = tomllib.loads(rendered)
         existing = target.read_text(encoding="utf-8")
@@ -551,8 +704,29 @@ def merge_codex_config(target: Path, rendered: str) -> None:
             )
     else:
         text = re.sub(r"(?m)^model_context_window\s*=\s*\d+\n?", "", text)
+    catalog_path = new.get("model_catalog_json")
+    if isinstance(catalog_path, str) and catalog_path:
+        assignment = f"model_catalog_json = {json.dumps(catalog_path)}"
+        if re.search(r"(?m)^model_catalog_json\s*=", text):
+            text = re.sub(
+                r'(?m)^model_catalog_json\s*=\s*"[^"]*"',
+                assignment,
+                text,
+                count=1,
+            )
+        else:
+            lines = text.splitlines(keepends=True)
+            insert_at = next(
+                (i for i, line in enumerate(lines) if line.lstrip().startswith("[")),
+                len(lines),
+            )
+            insert = assignment + "\n"
+            if insert_at > 0 and lines and not lines[insert_at - 1].endswith("\n"):
+                insert = "\n" + insert
+            lines.insert(insert_at, insert)
+            text = "".join(lines)
     write_atomic(target, text)
-    log(f"update  {target} (catalog changed; model + limits)")
+    log(f"update  {target} (catalog changed; model + limits + catalog pin)")
 
 
 def _apply_omnigent_catalog_fields(
@@ -619,6 +793,11 @@ def render_files(values: dict[str, str], alloc: Allocation) -> dict[str, str]:
     codex_out = _substitute("codex-config.toml", {**values, **codex_limits(alloc)})
     parsed = tomllib.loads(codex_out)
     assert parsed["model"] == openai_default, "codex root model mismatch"
+    picker_ids = [model.id for model in codex_picker_models(alloc)]
+    catalog_obj = codex_model_catalog(alloc)
+    catalog_slugs = [entry["slug"] for entry in catalog_obj["models"]]
+    assert catalog_slugs == picker_ids, "codex catalog slugs mismatch picker"
+    catalog_out = _dump_json(catalog_obj)
     codex_profiles = codex_profile_files(alloc)
     for content in codex_profiles.values():
         tomllib.loads(content)
@@ -654,6 +833,7 @@ def render_files(values: dict[str, str], alloc: Allocation) -> dict[str, str]:
     return {
         "claude-managed-settings.json": claude_out,
         "codex-config.toml": codex_out,
+        "codex-model-catalog.json": catalog_out,
         **{f"codex-profile/{name}": content for name, content in codex_profiles.items()},
         "opencode.json": opencode_out,
         "pi-models.json": pi_out,
@@ -683,6 +863,10 @@ def render_all(env: dict[str, str]) -> None:
     digest = catalog_digest()
     stored = read_catalog_hash(catalog_hash_path(config_home))
     catalog_stale = stored != digest
+    catalog_json_path = str((home / ".codex" / "model_catalog.json").resolve())
+    if any(ch in catalog_json_path for ch in '"\\\n'):
+        raise SystemExit(f"refusing to render: unsafe Codex catalog path {catalog_json_path!r}")
+    values["CODEX_MODEL_CATALOG_JSON"] = catalog_json_path
 
     log(
         f"gateway={base_url} anthropic_default={values['ANTHROPIC_MODEL']} "
@@ -701,14 +885,33 @@ def render_all(env: dict[str, str]) -> None:
         force=force,
         always=True,
     )
+    codex_config = home / ".codex" / "config.toml"
+    codex_catalog = home / ".codex" / "model_catalog.json"
+    catalog_missing = not codex_catalog.is_file()
     write_if_allowed(
-        home / ".codex" / "config.toml",
+        codex_config,
         rendered["codex-config.toml"],
         force=force,
         always=False,
         catalog_stale=catalog_stale,
         merge=merge_codex_config,
     )
+    write_if_allowed(
+        codex_catalog,
+        rendered["codex-model-catalog.json"],
+        force=force,
+        always=False,
+        catalog_stale=catalog_stale or catalog_missing,
+    )
+    if not force and codex_config.is_file():
+        try:
+            existing_toml = codex_config.read_text(encoding="utf-8")
+        except OSError:
+            existing_toml = ""
+        if "model_catalog_json" not in existing_toml:
+            merge_codex_config(codex_config, rendered["codex-config.toml"])
+    if catalog_stale or catalog_missing or force:
+        invalidate_codex_model_caches(config_home)
     write_if_allowed(
         home / ".config" / "opencode" / "opencode.json",
         rendered["opencode.json"],
