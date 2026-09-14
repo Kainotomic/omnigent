@@ -36,10 +36,10 @@ services:
 
   omnigent:
     # Immutable digest of the `runtime` target published by
-    # kainotomic-publish-images.yml (tag kainotomic-v0.14.0-kt10, fork commit
-    # 9e490c57). Bump by re-running the workflow and pasting the digest it
+    # kainotomic-publish-images.yml (tag kainotomic-v0.14.0-kt11, fork commit
+    # ffac16ea). Bump by re-running the workflow and pasting the digest it
     # reports.
-    image: ghcr.io/kainotomic/omnigent-server@sha256:2651f61fdbe3d5eb6a7796569a24a190bc33c4bfcf5e3eb4d0669293960cb35b
+    image: ghcr.io/kainotomic/omnigent-server@sha256:b2f9a7e57d61225ec4f464d44e3f260d6102cfdeda8f4b38adefcbde5b0a8dfe
     restart: unless-stopped
     # Starting point; tune after observing real usage.
     mem_limit: 4g
