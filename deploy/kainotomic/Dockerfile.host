@@ -8,7 +8,7 @@
 #       --build-arg EXTRA_HARNESS_CLIS=opencode@1.18.30 \
 #       -t omnigent-host-base:b203ba4c .
 #   docker build -f deploy/kainotomic/Dockerfile.host \
-#       -t omnigent-host:b203ba4c-kt9 .
+#       -t omnigent-host:b203ba4c-kt10 .
 ARG BASE_IMAGE=omnigent-host-base:b203ba4c
 FROM ${BASE_IMAGE}
 
