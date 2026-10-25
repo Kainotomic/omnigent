@@ -1,6 +1,6 @@
 ---
 name: pi-native-e2e-dev
-description: Spin up a live local Omnigent server + runner and exercise the native Pi TUI harness (pi-native) end-to-end — launch the real `pi` CLI via `omnigent pi`, drive turns through the web/bridge, smoke-test, and bug-bash. Load when developing, testing, or debugging the pi-native harness (omnigent/inner/pi_native_executor.py, pi_native_harness.py, omnigent/pi_native.py, pi_native_bridge.py, pi_native_credentials.py) or its bridge / extension / auth / model behavior.
+description: Spin up a live local Omnigent server + runner and exercise the native Pi TUI harness (pi-native) end-to-end — launch the real `pi` CLI via `omnigent pi`, drive turns through the web/bridge, smoke-test, and bug-bash. Load when developing, testing, or debugging the pi-native harness (omnigent/inner/pi_native_executor.py, pi_native_harness.py, omnigent/harnesses/pi_native/{main,bridge,credentials}.py) or its bridge / extension / auth / model behavior.
 ---
 
 # Pi native harness: end-to-end dev & testing (local server/runner)
@@ -105,8 +105,7 @@ It prints `Web UI: <url>` and a resume hint to stderr — grab the conversation 
 CONV=conv_xxxxxxxx   # from the "Web UI:" line / resume hint
 ```
 
-**B. PTY driver (fully automated).** Drive it under `pexpect` exactly like the
-`claude-native-e2e-test` skill's `cuj_driver.py` (a proven, generalizable base):
+**B. PTY driver (fully automated).** Drive it under `pexpect` and
 spawn `omnigent pi --server <url>` in a PTY with `cwd=<checkout>`, capture the
 conv id from the printed URL, send keystrokes / poll the API, then **tear down
 the whole process tree** (see Teardown — pexpect Ctrl-C only *detaches* tmux).
@@ -200,10 +199,10 @@ that wires Pi's provider/model. Key env vars: `HARNESS_PI_NATIVE_BRIDGE_DIR`,
 
 - **Executor (bridge enqueue):** `omnigent/inner/pi_native_executor.py`
 - **Harness wrap (`harness: pi-native`):** `omnigent/inner/pi_native_harness.py`
-- **CLI launch / daemon-runner / tmux attach:** `omnigent/pi_native.py`
+- **CLI launch / daemon-runner / tmux attach:** `omnigent/harnesses/pi_native/main.py`
   (`run_pi_native`); CLI command `pi(...)` in `omnigent/cli.py`
-- **Bridge (inbox, extension/config writers):** `omnigent/pi_native_bridge.py`
-- **Auth/model → Pi `models.json`:** `omnigent/pi_native_credentials.py`
+- **Bridge (inbox, extension/config writers):** `omnigent/harnesses/pi_native/bridge.py`
+- **Auth/model → Pi `models.json`:** `omnigent/harnesses/pi_native/credentials.py`
 - **Extension (JS, polls inbox, posts events/policies):**
   `omnigent/resources/pi_native/omnigent_pi_native_extension.js`
 - **Readiness gate:** `omnigent/onboarding/harness_readiness.py`
