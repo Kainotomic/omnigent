@@ -1,6 +1,6 @@
 ---
 name: antigravity-native-e2e-dev
-description: Spin up a live local Omnigent server + runner and exercise the native Antigravity (agy) TUI harness (antigravity-native) end-to-end — launch the real `agy` CLI via `omnigent antigravity`, drive turns through the web UI, smoke-test, and bug-bash. Load when developing, testing, or debugging the antigravity-native harness (omnigent/inner/antigravity_native_executor.py, omnigent/antigravity_native.py, antigravity_native_bridge.py, antigravity_native_rpc.py, antigravity_native_reader.py, antigravity_native_launch.py) or its agy launch / RPC mirror / tmux delivery / OAuth / MCP-relay behavior. NOT the in-process `antigravity` Gemini SDK harness.
+description: Spin up a live local Omnigent server + runner and exercise the native Antigravity (agy) TUI harness (antigravity-native) end-to-end — launch the real `agy` CLI via `omnigent antigravity`, drive turns through the web UI, smoke-test, and bug-bash. Load when developing, testing, or debugging the antigravity-native harness (omnigent/inner/antigravity_native_executor.py, omnigent/harnesses/antigravity_native/{main,bridge,rpc,reader,launch}.py) or its agy launch / RPC mirror / tmux delivery / OAuth / MCP-relay behavior. NOT the in-process `antigravity` Gemini SDK harness.
 ---
 
 # Antigravity native harness: end-to-end dev & testing (local server/runner)
@@ -118,8 +118,7 @@ It prints `Web UI: <url>` and a resume hint to stderr — grab the conversation 
 CONV=conv_xxxxxxxx   # from the "Web UI:" line / resume hint
 ```
 
-**B. PTY driver (fully automated).** Drive it under `pexpect` like the
-`claude-native-e2e-test` skill's `cuj_driver.py`: spawn `omnigent antigravity
+**B. PTY driver (fully automated).** Drive it under `pexpect`: spawn `omnigent antigravity
 --server <url>` in a PTY with `cwd=<checkout>`, capture the conv id from the
 printed URL, then drive/poll the API, then **tear down the whole process tree**
 (see Teardown — a pexpect Ctrl-C only *detaches* tmux).
@@ -225,14 +224,14 @@ Key facts:
 
 - **Executor (write path — types into the TUI):** `omnigent/inner/antigravity_native_executor.py`
 - **Harness wrap (`harness: antigravity-native`):** `omnigent/inner/antigravity_native_harness.py`
-- **CLI launch / daemon-runner / tmux attach:** `omnigent/antigravity_native.py`
+- **CLI launch / daemon-runner / tmux attach:** `omnigent/harnesses/antigravity_native/main.py`
   (`run_antigravity_native`); CLI command `antigravity(...)` in `omnigent/cli.py`
-- **agy argv / auth-mode / permission flag:** `omnigent/antigravity_native_launch.py`
-- **Bridge (state, tmux delivery, isolated HOME, MCP relay):** `omnigent/antigravity_native_bridge.py`
-- **connect-RPC client (port discovery, send/cancel/interaction):** `omnigent/antigravity_native_rpc.py`
-- **RPC read driver (trajectory mirror):** `omnigent/antigravity_native_reader.py`
-- **Steps / interactions / audit:** `omnigent/antigravity_native_steps.py`,
-  `omnigent/antigravity_native_interactions.py`, `omnigent/antigravity_native_audit.py`
+- **agy argv / auth-mode / permission flag:** `omnigent/harnesses/antigravity_native/launch.py`
+- **Bridge (state, tmux delivery, isolated HOME, MCP relay):** `omnigent/harnesses/antigravity_native/bridge.py`
+- **connect-RPC client (port discovery, send/cancel/interaction):** `omnigent/harnesses/antigravity_native/rpc.py`
+- **RPC read driver (trajectory mirror):** `omnigent/harnesses/antigravity_native/reader.py`
+- **Steps / interactions / audit:** `omnigent/harnesses/antigravity_native/steps.py`,
+  `omnigent/harnesses/antigravity_native/interactions.py`, `omnigent/harnesses/antigravity_native/audit.py`
 - **OAuth detection:** `omnigent/onboarding/gemini_auth.py`
 - **Design/plan docs:** `docs/antigravity-native-rpc-core-design.md`,
   `docs/antigravity-native-rpc-core-plan.md`

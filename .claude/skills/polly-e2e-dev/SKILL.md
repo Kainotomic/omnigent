@@ -190,14 +190,14 @@ side effects.
 - **Orchestration skills:** `examples/polly/skills/{investigate,fanout,cross-review}/SKILL.md`
 - **Guardrail policies:** `omnigent/inner/nessie/policies.py`
 - **Runner-side gate:** `omnigent/runner/policy.py`; server-side tool-call
-  enforcement: `omnigent/server/routes/sessions.py`
+  enforcement: `omnigent/server/routes/_sessions/`
 - **Mock LLM server:** `tests/server/integration/mock_llm_server.py`
 
 ```bash
 # Existing pytest e2e for polly (mock-LLM) — complementary to this skill:
 uv run --frozen --group test python -m pytest \
   tests/e2e/test_polly_e2e.py \
-  tests/e2e/test_polly_cost_advisor_e2e.py \
+  tests/e2e/test_polly_copilot_e2e.py \
   tests/e2e/test_polly_subagent_model_e2e.py -q
 ```
 

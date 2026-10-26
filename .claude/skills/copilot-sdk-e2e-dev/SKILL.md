@@ -105,10 +105,8 @@ the full stack is good: token, egress, bundled CLI, harness.
 
 The copilot harness can serve as an **async orchestrator** brain (polly / debby),
 not just a standalone agent — it dispatches to sub-agents via the bridged
-`sys_*` tools and synthesizes their results. Two ways to exercise it:
-
-**1. Committed regression guard (brain smoke).**
-`tests/e2e/test_polly_copilot_e2e.py` boots a local server from your checkout and
+`sys_*` tools and synthesizes their results. Exercise it with the committed regression guard
+(brain smoke): `tests/e2e/test_polly_copilot_e2e.py` boots a local server from your checkout and
 runs `examples/polly` with `--harness copilot --model auto`, asserting the brain
 boots and replies. It is **skipped** unless a Copilot token is configured (so CI
 without one skips it). Run it with:
@@ -116,28 +114,6 @@ without one skips it). Run it with:
 ```bash
 .venv/bin/python -m pytest -o addopts="" tests/e2e/test_polly_copilot_e2e.py -v
 ```
-
-**2. Full orchestration (dispatch → collect → synthesize).** Use the
-`polly-e2e-dev` driver (in the internal `agent-framework` clone) — it boots a
-local server, polls the AP API, auto-answers elicitations, and asserts the
-fan-out. Drive the brain on copilot with `--brain-harness copilot`, and **always
-pass a Copilot-catalog `--brain-model`** (`auto`, `claude-haiku-4.5`,
-`gpt-5-mini`): the driver's default `--brain-model` is a Claude id that Copilot
-(no Databricks gateway) can't route. From the agent-framework clone:
-
-```bash
-.venv/bin/python .claude/skills/polly-e2e-dev/polly_driver.py \
-  --local --code-dir <this-worktree> \
-  --cuj smoke --brain-harness copilot --brain-model auto      # brain only
-# --cuj fanout  …  and  --cuj review-pr --repo omnigent-ai/omnigent --pr <n>  …
-#   exercise real sub-agent dispatch (claude_code + codex) under a copilot brain.
-```
-
-All three CUJs (smoke / fanout / review-pr) pass on a copilot brain (verified
-live: fanout dispatched 8 sub-agents, 8/8 OK + a synthesis). Note `omni run -p`
-exits after the dispatch turn (the brain parks until woken), so a sub-agent's
-final answer lands server-side — read it over the AP API
-(`GET /v1/sessions/{id}/items`, child sessions), not just stdout.
 
 ## Gotchas (these cost real time)
 
