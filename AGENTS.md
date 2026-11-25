@@ -22,6 +22,12 @@ Use `just` for common tasks; run `just --list` for grouped recipes.
 
 ## Pull requests
 
+Use `type(scope): description (KEY-123)` for every new Jira-linked PR,
+including drafts. Choose `feat`, `fix`, `docs`, `ci`, `chore`, `refactor`,
+`test` or `perf`. Use an imperative description and aim for about 50
+characters before the key. Example
+`fix(runner): preserve the active task filter (KOPS-123)`.
+
 When you open a pull request, fill in the repo's PR template at
 `.github/pull_request_template.md` (case-sensitive on Linux — note the lowercase
 filename). Keep every section and checkbox row so reviewers can skim them,
